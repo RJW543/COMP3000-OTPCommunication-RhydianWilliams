@@ -3,7 +3,7 @@ from tkinter import messagebox, scrolledtext
 import socket
 import threading
 from pathlib import Path
-import msvcrt
+import fcntl
 
 # Set this to the public IP of the machine running otp_server_host.py
 SERVER_HOST = '141.163.53.214'  
@@ -34,20 +34,23 @@ def save_used_page(identifier, file_name="used_pages.txt"):
     with open(file_name, "a") as file:
         file.write(f"{identifier}\n")
 
-def get_next_otp_page_windows(otp_pages, used_identifiers, lock_file="used_pages.lock"):
-    """Find the next unused OTP page based on identifiers with a locking mechanism on Windows."""
+def get_next_otp_page_linux(otp_pages, used_identifiers, lock_file="used_pages.lock"):
+    """Find the next unused OTP page based on identifiers with a locking mechanism on Linux."""
     with open(lock_file, "w") as lock:
-        msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)  # Acquire an exclusive lock
+        # Acquire an exclusive lock
+        fcntl.flock(lock, fcntl.LOCK_EX)
 
         for identifier, content in otp_pages:
             if identifier not in used_identifiers:
                 # Mark it as used immediately
                 save_used_page(identifier)
                 used_identifiers.add(identifier)
-                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)  # Release the lock
+                # Release the lock before returning
+                fcntl.flock(lock, fcntl.LOCK_UN)
                 return identifier, content
 
-        msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)  # Release the lock if no match found
+        # Release the lock if no match found
+        fcntl.flock(lock, fcntl.LOCK_UN)
     return None, None
 
 def encrypt_message(message, otp_content):
