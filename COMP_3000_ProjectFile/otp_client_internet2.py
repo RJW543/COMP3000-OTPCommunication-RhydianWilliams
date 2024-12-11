@@ -6,8 +6,8 @@ from pathlib import Path
 import fcntl
 
 # Set this to the public IP of the machine running otp_server_host.py
-SERVER_HOST = '141.163.53.214'  
-SERVER_PORT = 65432
+SERVER_HOST = '5.tcp.eu.ngrok.io'  
+SERVER_PORT = 13976
 
 # --- OTP Related Functions ---
 
@@ -144,7 +144,7 @@ class OTPClient:
             messagebox.showerror("Error", f"Failed to connect to the server: {e}")
 
     def get_next_available_otp(self):
-        return get_next_otp_page_windows(self.otp_pages, self.used_identifiers)
+        return get_next_otp_page_linux(self.otp_pages, self.used_identifiers)
 
     def send_message(self):
         recipient_id = self.recipient_input.get().strip().replace("Enter recipient userID:", "")
