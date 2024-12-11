@@ -18,6 +18,8 @@ ngrok tcp 65432
 To start client:
 python3 otp_client_internet2.py
 
+## Planning Images
+
 <br>
 ![image](https://github.com/user-attachments/assets/b7bceddd-3127-4465-b07b-ffb6175984f7)
 <br>
