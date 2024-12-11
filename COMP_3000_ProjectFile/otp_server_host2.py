@@ -1,10 +1,19 @@
 import socket
 import threading
 import socketserver
+import subprocess
+import time
+import re
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import requests
 
-HOST = '0.0.0.0'  # Listen on all interfaces, accessible via the internet
+HOST = '0.0.0.0'  # Listen on all interfaces
 PORT = 65432
-clients = {}  # Stores userID -> client_socket mapping
+clients = {}  # userID -> client_socket mapping
+
+NGROK_HOST = None
+NGROK_PORT = None
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
@@ -47,16 +56,73 @@ def send_message_to_recipient(recipient_id, message, sender_id):
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     pass
 
+# Simple HTTP handler to serve the Ngrok info
+class NgrokInfoHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/ngrok':
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            info = {
+                "host": NGROK_HOST,
+                "port": NGROK_PORT
+            }
+            self.wfile.write(json.dumps(info).encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def run_http_server():
+    http_server = HTTPServer((HOST, 5000), NgrokInfoHandler)
+    print("HTTP server for Ngrok info running on port 5000")
+    http_server.serve_forever()
+
+def start_ngrok():
+    # Start ngrok to tunnel the TCP server port
+    print("Starting Ngrok...")
+    ngrok = subprocess.Popen(['ngrok', 'tcp', str(PORT)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # Wait a bit for ngrok to initialize
+    time.sleep(5)
+
+    # Fetch ngrok tunnel info from localhost:4040 API
+    try:
+        res = requests.get("http://localhost:4040/api/tunnels")
+        tunnels = res.json()
+        for t in tunnels.get("tunnels", []):
+            if t.get("proto") == "tcp":
+                public_url = t.get("public_url")
+                # public_url format: tcp://0.tcp.ngrok.io:12345
+                global NGROK_HOST, NGROK_PORT
+                # Extract host and port
+                url = public_url.replace("tcp://", "")
+                NGROK_HOST, NGROK_PORT = url.split(":")
+                print(f"Ngrok address: {NGROK_HOST}:{NGROK_PORT}")
+                break
+    except Exception as e:
+        print("Error fetching Ngrok info:", e)
+
+    return ngrok
+
 if __name__ == "__main__":
+    # Start the Ngrok tunnel
+    ngrok_process = start_ngrok()
+
+    # Start the server
     server = ThreadedTCPServer((HOST, PORT), ThreadedTCPRequestHandler)
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
-    print(f"Server running on {HOST}:{PORT} and accessible via the internet...")
+    print(f"Server running on {HOST}:{PORT} and accessible via Ngrok...")
 
-    # Keep the main thread alive to allow server to run continuously
+    # Start HTTP server to serve Ngrok info
+    http_thread = threading.Thread(target=run_http_server, daemon=True)
+    http_thread.start()
+
+    # Keep main thread alive
     try:
         server_thread.join()
     except KeyboardInterrupt:
         print("Shutting down the server...")
         server.shutdown()
         server.server_close()
+        if ngrok_process:
+            ngrok_process.terminate()
