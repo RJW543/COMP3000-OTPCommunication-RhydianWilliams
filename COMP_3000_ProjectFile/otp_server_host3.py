@@ -1,4 +1,4 @@
-# otp_server_host2.py
+# otp_server_host3.py
 import socket
 import threading
 import socketserver
