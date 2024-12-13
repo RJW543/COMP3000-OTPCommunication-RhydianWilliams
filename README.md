@@ -9,14 +9,14 @@ Project Vision: This project is designed for individuals or institutions whose n
 
 ## Terminal commands
 <br>
-To start Ngrok:
-python3 otp_server_host2.py
+To start server:
+python3 otp_server_host3.py
 <br>
 To start Ngrok:
 ngrok tcp 65432
 <br>
 To start client:
-python3 otp_client_internet2.py
+python3 otp_client_internet3.py
 
 ## Planning Images
 
