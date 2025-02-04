@@ -17,6 +17,10 @@ ngrok tcp 65432
 <br>
 To start client:
 python3 otp_client_internet3.py
+<br>
+python3 encrypt_voice.py --otp otp_cipher.txt --output encrypted_audio.bin --duration 10
+<br>
+python3 decrypt_voice.py --otp otp_cipher.txt --input encrypted_audio.bin
 
 ## Planning Images
 
