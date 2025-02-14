@@ -282,8 +282,9 @@ def test_output_device(device_index):
 def test_input_device(input_device_index, output_device_index):
     """
     Record 3 seconds from the selected input device and then play it back on the selected output device.
-    Added debug logging to check captured data.
+    Uses NumPy to process the captured audio.
     """
+    import numpy as np  # Ensure numpy is imported here
     pa_test = pyaudio.PyAudio()
     record_seconds = 3
     frames = []
@@ -305,8 +306,13 @@ def test_input_device(input_device_index, output_device_index):
         for i in range(0, int(RATE / CHUNK * record_seconds)):
             data = stream_in.read(CHUNK, exception_on_overflow=False)
             frames.append(data)
-            # Log some details about the captured frame:
-            energy = sum(abs(b) for b in data) 
+            try:
+                # Convert the raw data into an array of int16 samples
+                samples = np.frombuffer(data, dtype=np.int16)
+                energy = np.sum(np.abs(samples))
+            except Exception as conv_err:
+                log(f"Error processing frame {i+1}: {conv_err}")
+                energy = 0
             total_energy += energy
             log(f"Captured frame {i+1}, length: {len(data)}, energy: {energy}")
         
@@ -314,9 +320,8 @@ def test_input_device(input_device_index, output_device_index):
         stream_in.close()
         log("Test input: Recording complete. Total energy: " + str(total_energy))
         
-        # If total energy is very low, it may mean that no audio was captured.
         if total_energy < 1000:
-            log("Warning: Captured audio energy is very low. Check your microphone settings.")
+            log("Warning: Captured audio energy is very low. Check your microphone settings or gain.")
         
         log("Test input: Playing back the recorded audio...")
         
