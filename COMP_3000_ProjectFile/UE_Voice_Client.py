@@ -1,10 +1,11 @@
 # client.py
 import socket
-import time
 import threading
 import tkinter as tk
+from tkinter import ttk
 import queue
 import pyaudio
+import time
 
 # Audio configuration
 CHUNK = 1024
@@ -28,17 +29,37 @@ output_stream = None
 log_queue = queue.Queue()
 
 def log(message):
+    """Append message to GUI log."""
     log_queue.put(message)
 
 def process_log_queue(text_widget):
+    """Periodically update the log text widget."""
     while not log_queue.empty():
         msg = log_queue.get()
         text_widget.insert(tk.END, msg + "\n")
         text_widget.see(tk.END)
     text_widget.after(100, process_log_queue, text_widget)
 
+def list_audio_devices():
+    """
+    Returns two lists:
+      - input_devices: list of tuples (index, name) for devices with input channels.
+      - output_devices: list of tuples (index, name) for devices with output channels.
+    """
+    pa = pyaudio.PyAudio()
+    input_devices = []
+    output_devices = []
+    for i in range(pa.get_device_count()):
+        info = pa.get_device_info_by_index(i)
+        if info.get("maxInputChannels", 0) > 0:
+            input_devices.append((i, info.get("name", f"Device {i}")))
+        if info.get("maxOutputChannels", 0) > 0:
+            output_devices.append((i, info.get("name", f"Device {i}")))
+    pa.terminate()
+    return input_devices, output_devices
+
 def read_line(s):
-    """Read from socket s until a newline character; return decoded string (without newline)."""
+    """Read a line (until newline) from socket s."""
     line = b""
     while True:
         ch = s.recv(1)
@@ -50,7 +71,7 @@ def read_line(s):
     return line.decode('utf-8')
 
 def recvall(s, n):
-    """Receive exactly n bytes from socket s (or return None if connection is closed)."""
+    """Receive exactly n bytes from socket s, or return None if connection closed."""
     data = b""
     while len(data) < n:
         packet = s.recv(n - len(data))
@@ -60,15 +81,13 @@ def recvall(s, n):
     return data
 
 def audio_send():
-    """Continuously capture audio and send to the server while in a call."""
+    """Continuously capture audio from the microphone and send to the server while in a call."""
     global in_call, sock, input_stream
     while in_call:
         try:
-            # Read a chunk of audio from the microphone.
             data = input_stream.read(CHUNK, exception_on_overflow=False)
             if not data:
                 continue
-            # Send the VOICE header and audio data.
             sock.sendall("VOICE\n".encode())
             sock.sendall(data)
         except BrokenPipeError:
@@ -82,13 +101,14 @@ def audio_send():
         time.sleep(0.01)
 
 def start_audio_send_thread():
+    """Start the audio sending thread if not already running."""
     global audio_send_thread
     if audio_send_thread is None or not audio_send_thread.is_alive():
         audio_send_thread = threading.Thread(target=audio_send, daemon=True)
         audio_send_thread.start()
 
 def listen_to_server():
-    """Listen on the socket for signaling and voice data from the server."""
+    """Listen for messages (signaling and voice data) from the server."""
     global in_call, call_partner, pending_call, sock, output_stream
     while True:
         try:
@@ -128,7 +148,7 @@ def listen_to_server():
                     if data:
                         output_stream.write(data)
                 else:
-                    # If not in call, discard or ignore.
+                    # Discard data if not in call.
                     _ = recvall(sock, CHUNK)
             else:
                 log(f"Unknown command from server: {line}")
@@ -136,8 +156,10 @@ def listen_to_server():
             log(f"Error in listen thread: {e}")
             break
 
-def connect_to_server(server_host, server_port, user_id):
-    """Connect to the server, send registration, and initialize audio streams."""
+def connect_to_server(server_host, server_port, user_id, input_device_index, output_device_index):
+    """
+    Connect to the server, register, and initialize audio streams using the provided device indices.
+    """
     global sock, p, input_stream, output_stream
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -148,18 +170,20 @@ def connect_to_server(server_host, server_port, user_id):
         log(f"Could not connect to server: {e}")
         return False
 
-    # Initialise PyAudio streams.
+    # Initialise PyAudio streams with the selected devices.
     try:
         p = pyaudio.PyAudio()
         input_stream = p.open(format=FORMAT,
                               channels=CHANNELS,
                               rate=RATE,
                               input=True,
+                              input_device_index=input_device_index,
                               frames_per_buffer=CHUNK)
         output_stream = p.open(format=FORMAT,
                                channels=CHANNELS,
                                rate=RATE,
                                output=True,
+                               output_device_index=output_device_index,
                                frames_per_buffer=CHUNK)
     except Exception as e:
         log(f"Error initializing audio: {e}")
@@ -224,11 +248,20 @@ def hangup_call():
         log("Not in a call.")
 
 def run_client_gui():
-    """Run the Tkinter GUI for the client."""
+    """Run the Tkinter GUI for the client with device selection menus."""
     root = tk.Tk()
     root.title("Voice Chat Client")
 
-    # Connection frame
+    # Get available audio devices.
+    input_devs, output_devs = list_audio_devices()
+    # Build option lists for display.
+    input_options = [f"{i}: {name}" for (i, name) in input_devs]
+    output_options = [f"{i}: {name}" for (i, name) in output_devs]
+    # Create dictionaries to map the display string to the device index.
+    input_device_dict = {f"{i}: {name}": i for (i, name) in input_devs}
+    output_device_dict = {f"{i}: {name}": i for (i, name) in output_devs}
+
+    # Connection frame.
     conn_frame = tk.Frame(root)
     conn_frame.pack(pady=5)
     tk.Label(conn_frame, text="Server Host:").grid(row=0, column=0, sticky="e")
@@ -245,15 +278,46 @@ def run_client_gui():
     user_id_entry = tk.Entry(conn_frame)
     user_id_entry.grid(row=2, column=1)
 
-    connect_button = tk.Button(conn_frame, text="Connect", width=12, 
-                               command=lambda: connect_to_server(
-                                   server_host_entry.get().strip(),
-                                   server_port_entry.get().strip(),
-                                   user_id_entry.get().strip()
-                               ))
-    connect_button.grid(row=3, column=0, columnspan=2, pady=5)
+    # Audio device selection.
+    tk.Label(conn_frame, text="Input Device:").grid(row=3, column=0, sticky="e")
+    selected_input_device = tk.StringVar(conn_frame)
+    if input_options:
+        selected_input_device.set(input_options[0])
+    else:
+        selected_input_device.set("No input devices")
+    input_menu = ttk.OptionMenu(conn_frame, selected_input_device, selected_input_device.get(), *input_options)
+    input_menu.grid(row=3, column=1)
 
-    # Call controls frame
+    tk.Label(conn_frame, text="Output Device:").grid(row=4, column=0, sticky="e")
+    selected_output_device = tk.StringVar(conn_frame)
+    if output_options:
+        selected_output_device.set(output_options[0])
+    else:
+        selected_output_device.set("No output devices")
+    output_menu = ttk.OptionMenu(conn_frame, selected_output_device, selected_output_device.get(), *output_options)
+    output_menu.grid(row=4, column=1)
+
+    def on_connect():
+        """Handle the Connect button click."""
+        server_host = server_host_entry.get().strip()
+        server_port = server_port_entry.get().strip()
+        user_id = user_id_entry.get().strip()
+        input_sel = selected_input_device.get()
+        output_sel = selected_output_device.get()
+        if not (server_host and server_port and user_id and input_sel and output_sel):
+            log("Please fill in all fields and select devices.")
+            return
+        input_device_index = input_device_dict.get(input_sel)
+        output_device_index = output_device_dict.get(output_sel)
+        if connect_to_server(server_host, server_port, user_id, input_device_index, output_device_index):
+            log("Connection established.")
+        else:
+            log("Connection failed.")
+
+    connect_button = tk.Button(conn_frame, text="Connect", width=12, command=on_connect)
+    connect_button.grid(row=5, column=0, columnspan=2, pady=5)
+
+    # Call controls frame.
     call_frame = tk.Frame(root)
     call_frame.pack(pady=5)
     tk.Label(call_frame, text="Call User (for outgoing calls):").grid(row=0, column=0, sticky="e")
@@ -273,7 +337,7 @@ def run_client_gui():
     hangup_button = tk.Button(call_frame, text="Hang Up", width=12, command=hangup_call)
     hangup_button.grid(row=2, column=1, pady=5)
 
-    # Log display
+    # Log display.
     log_text = tk.Text(root, height=15, width=60)
     log_text.pack(pady=5)
     process_log_queue(log_text)
