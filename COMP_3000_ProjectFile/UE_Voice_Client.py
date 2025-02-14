@@ -280,31 +280,52 @@ def test_output_device(device_index):
     pa_test.terminate()
 
 def test_input_device(input_device_index, output_device_index):
-    """Record 3 seconds from the selected input device and then play it back on the selected output device."""
+    """
+    Record 3 seconds from the selected input device and then play it back on the selected output device.
+    Added debug logging to check captured data.
+    """
     pa_test = pyaudio.PyAudio()
     record_seconds = 3
     frames = []
+    
     try:
+        # Optionally, print device info for debugging:
+        dev_info = pa_test.get_device_info_by_index(input_device_index)
+        log(f"Selected input device info: {dev_info}")
+        
         stream_in = pa_test.open(format=FORMAT,
-                              channels=1,
-                              rate=RATE,
-                              input=True,
-                              input_device_index=input_device_index,
-                              frames_per_buffer=CHUNK)
+                                 channels=CHANNELS,
+                                 rate=RATE,
+                                 input=True,
+                                 input_device_index=input_device_index,
+                                 frames_per_buffer=CHUNK)
         log("Test input: Recording for 3 seconds. Please speak...")
+        
+        total_energy = 0
         for i in range(0, int(RATE / CHUNK * record_seconds)):
             data = stream_in.read(CHUNK, exception_on_overflow=False)
             frames.append(data)
+            # Log some details about the captured frame:
+            energy = sum(abs(b) for b in data) 
+            total_energy += energy
+            log(f"Captured frame {i+1}, length: {len(data)}, energy: {energy}")
+        
         stream_in.stop_stream()
         stream_in.close()
-        log("Test input: Recording complete. Playing back...")
+        log("Test input: Recording complete. Total energy: " + str(total_energy))
+        
+        # If total energy is very low, it may mean that no audio was captured.
+        if total_energy < 1000:
+            log("Warning: Captured audio energy is very low. Check your microphone settings.")
+        
+        log("Test input: Playing back the recorded audio...")
         
         stream_out = pa_test.open(format=FORMAT,
-                              channels=1,
-                              rate=RATE,
-                              output=True,
-                              output_device_index=output_device_index,
-                              frames_per_buffer=CHUNK)
+                                  channels=CHANNELS,
+                                  rate=RATE,
+                                  output=True,
+                                  output_device_index=output_device_index,
+                                  frames_per_buffer=CHUNK)
         for frame in frames:
             stream_out.write(frame)
         stream_out.stop_stream()
