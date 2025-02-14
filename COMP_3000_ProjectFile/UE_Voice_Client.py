@@ -1,5 +1,6 @@
 # client.py
 import socket
+import time
 import threading
 import tkinter as tk
 import queue
@@ -63,12 +64,22 @@ def audio_send():
     global in_call, sock, input_stream
     while in_call:
         try:
+            # Read a chunk of audio from the microphone.
             data = input_stream.read(CHUNK, exception_on_overflow=False)
+            if not data:
+                continue
+            # Send the VOICE header and audio data.
             sock.sendall("VOICE\n".encode())
             sock.sendall(data)
+        except BrokenPipeError:
+            log("Broken pipe error encountered. Ending call.")
+            in_call = False
+            break
         except Exception as e:
             log(f"Error sending audio: {e}")
+            in_call = False
             break
+        time.sleep(0.01)
 
 def start_audio_send_thread():
     global audio_send_thread
