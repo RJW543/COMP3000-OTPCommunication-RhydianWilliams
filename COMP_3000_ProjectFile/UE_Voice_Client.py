@@ -280,20 +280,11 @@ def test_output_device(device_index):
     pa_test.terminate()
 
 def test_input_device(input_device_index, output_device_index):
-    """
-    Record 3 seconds from the selected input device and then play it back on the selected output device.
-    Uses NumPy to process the captured audio.
-    """
-    import numpy as np  # Ensure numpy is imported here
+    """Record 3 seconds from the selected input device and then play it back on the selected output device."""
     pa_test = pyaudio.PyAudio()
     record_seconds = 3
     frames = []
-    
     try:
-        # Optionally, print device info for debugging:
-        dev_info = pa_test.get_device_info_by_index(input_device_index)
-        log(f"Selected input device info: {dev_info}")
-        
         stream_in = pa_test.open(format=FORMAT,
                                  channels=CHANNELS,
                                  rate=RATE,
@@ -301,29 +292,12 @@ def test_input_device(input_device_index, output_device_index):
                                  input_device_index=input_device_index,
                                  frames_per_buffer=CHUNK)
         log("Test input: Recording for 3 seconds. Please speak...")
-        
-        total_energy = 0
         for i in range(0, int(RATE / CHUNK * record_seconds)):
             data = stream_in.read(CHUNK, exception_on_overflow=False)
             frames.append(data)
-            try:
-                # Convert the raw data into an array of int16 samples
-                samples = np.frombuffer(data, dtype=np.int16)
-                energy = np.sum(np.abs(samples))
-            except Exception as conv_err:
-                log(f"Error processing frame {i+1}: {conv_err}")
-                energy = 0
-            total_energy += energy
-            log(f"Captured frame {i+1}, length: {len(data)}, energy: {energy}")
-        
         stream_in.stop_stream()
         stream_in.close()
-        log("Test input: Recording complete. Total energy: " + str(total_energy))
-        
-        if total_energy < 1000:
-            log("Warning: Captured audio energy is very low. Check your microphone settings or gain.")
-        
-        log("Test input: Playing back the recorded audio...")
+        log("Test input: Recording complete. Playing back...")
         
         stream_out = pa_test.open(format=FORMAT,
                                   channels=CHANNELS,
@@ -339,6 +313,7 @@ def test_input_device(input_device_index, output_device_index):
     except Exception as e:
         log(f"Test input error: {e}")
     pa_test.terminate()
+
 
 # --- GUI ---
 
