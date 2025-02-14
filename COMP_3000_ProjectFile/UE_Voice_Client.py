@@ -158,7 +158,7 @@ def listen_to_server():
 
 def connect_to_server(server_host, server_port, user_id, input_device_index, output_device_index):
     """
-    Connect to the server, register, and initialize audio streams using the provided device indices.
+    Connect to the server, register, and initialise audio streams using the provided device indices.
     """
     global sock, p, input_stream, output_stream
     try:
@@ -186,7 +186,7 @@ def connect_to_server(server_host, server_port, user_id, input_device_index, out
                                output_device_index=output_device_index,
                                frames_per_buffer=CHUNK)
     except Exception as e:
-        log(f"Error initializing audio: {e}")
+        log(f"Error initialising audio: {e}")
         return False
 
     # Start a thread to listen to server messages.
@@ -247,8 +247,77 @@ def hangup_call():
     else:
         log("Not in a call.")
 
+# --- Testing Functions for Audio Devices ---
+
+def test_output_device(device_index):
+    """Generate and play a 1-second 440Hz tone on the selected output device."""
+    try:
+        import numpy as np
+    except ImportError:
+        log("NumPy is required for output testing. Please install it via pip.")
+        return
+
+    pa_test = pyaudio.PyAudio()
+    duration = 1.0  # seconds
+    fs = RATE
+    f = 440.0  # tone frequency (A4)
+    t = np.linspace(0, duration, int(fs * duration), False)
+    tone = 0.5 * np.sin(2 * np.pi * f * t)
+    # Convert to 16-bit PCM
+    tone = (tone * 32767).astype(np.int16).tobytes()
+    try:
+        stream = pa_test.open(format=FORMAT,
+                              channels=1,
+                              rate=RATE,
+                              output=True,
+                              output_device_index=device_index)
+        stream.write(tone)
+        stream.stop_stream()
+        stream.close()
+        log("Test output: Tone played successfully.")
+    except Exception as e:
+        log(f"Test output error: {e}")
+    pa_test.terminate()
+
+def test_input_device(input_device_index, output_device_index):
+    """Record 3 seconds from the selected input device and then play it back on the selected output device."""
+    pa_test = pyaudio.PyAudio()
+    record_seconds = 3
+    frames = []
+    try:
+        stream_in = pa_test.open(format=FORMAT,
+                              channels=1,
+                              rate=RATE,
+                              input=True,
+                              input_device_index=input_device_index,
+                              frames_per_buffer=CHUNK)
+        log("Test input: Recording for 3 seconds. Please speak...")
+        for i in range(0, int(RATE / CHUNK * record_seconds)):
+            data = stream_in.read(CHUNK, exception_on_overflow=False)
+            frames.append(data)
+        stream_in.stop_stream()
+        stream_in.close()
+        log("Test input: Recording complete. Playing back...")
+        
+        stream_out = pa_test.open(format=FORMAT,
+                              channels=1,
+                              rate=RATE,
+                              output=True,
+                              output_device_index=output_device_index,
+                              frames_per_buffer=CHUNK)
+        for frame in frames:
+            stream_out.write(frame)
+        stream_out.stop_stream()
+        stream_out.close()
+        log("Test input: Playback complete.")
+    except Exception as e:
+        log(f"Test input error: {e}")
+    pa_test.terminate()
+
+# --- GUI ---
+
 def run_client_gui():
-    """Run the Tkinter GUI for the client with device selection menus."""
+    """Run the Tkinter GUI for the client with device selection and test options."""
     root = tk.Tk()
     root.title("Voice Chat Client")
 
@@ -267,12 +336,12 @@ def run_client_gui():
     tk.Label(conn_frame, text="Server Host:").grid(row=0, column=0, sticky="e")
     server_host_entry = tk.Entry(conn_frame)
     server_host_entry.grid(row=0, column=1)
-    server_host_entry.insert(0, "0.tcp.ngrok.io") 
+    server_host_entry.insert(0, "0.tcp.ngrok.io")  # Adjust as needed.
 
     tk.Label(conn_frame, text="Server Port:").grid(row=1, column=0, sticky="e")
     server_port_entry = tk.Entry(conn_frame)
     server_port_entry.grid(row=1, column=1)
-    server_port_entry.insert(0, "5000")  
+    server_port_entry.insert(0, "5000")  # Adjust as needed.
 
     tk.Label(conn_frame, text="Your User ID:").grid(row=2, column=0, sticky="e")
     user_id_entry = tk.Entry(conn_frame)
@@ -316,6 +385,32 @@ def run_client_gui():
 
     connect_button = tk.Button(conn_frame, text="Connect", width=12, command=on_connect)
     connect_button.grid(row=5, column=0, columnspan=2, pady=5)
+
+    # Device testing buttons.
+    def on_test_output():
+        output_sel = selected_output_device.get()
+        if output_sel not in output_device_dict:
+            log("Invalid output device selection.")
+            return
+        device_index = output_device_dict[output_sel]
+        test_output_device(device_index)
+
+    def on_test_input():
+        input_sel = selected_input_device.get()
+        output_sel = selected_output_device.get()
+        if input_sel not in input_device_dict or output_sel not in output_device_dict:
+            log("Invalid device selection for test input.")
+            return
+        input_index = input_device_dict[input_sel]
+        output_index = output_device_dict[output_sel]
+        test_input_device(input_index, output_index)
+
+    test_frame = tk.Frame(conn_frame)
+    test_frame.grid(row=6, column=0, columnspan=2, pady=5)
+    test_output_button = tk.Button(test_frame, text="Test Output", command=on_test_output)
+    test_output_button.pack(side=tk.LEFT, padx=5)
+    test_input_button = tk.Button(test_frame, text="Test Input", command=on_test_input)
+    test_input_button.pack(side=tk.LEFT, padx=5)
 
     # Call controls frame.
     call_frame = tk.Frame(root)
