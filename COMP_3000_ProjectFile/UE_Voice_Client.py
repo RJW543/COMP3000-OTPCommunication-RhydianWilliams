@@ -335,12 +335,12 @@ def run_client_gui():
     tk.Label(conn_frame, text="Server Host:").grid(row=0, column=0, sticky="e")
     server_host_entry = tk.Entry(conn_frame)
     server_host_entry.grid(row=0, column=1)
-    server_host_entry.insert(0, "0.tcp.ngrok.io")  
+    server_host_entry.insert(0, "0.tcp.ngrok.io")  # Adjust as needed.
 
     tk.Label(conn_frame, text="Server Port:").grid(row=1, column=0, sticky="e")
     server_port_entry = tk.Entry(conn_frame)
     server_port_entry.grid(row=1, column=1)
-    server_port_entry.insert(0, "5000")  
+    server_port_entry.insert(0, "5000")  # Adjust as needed.
 
     tk.Label(conn_frame, text="Your User ID:").grid(row=2, column=0, sticky="e")
     user_id_entry = tk.Entry(conn_frame)
@@ -366,21 +366,23 @@ def run_client_gui():
     output_menu.grid(row=4, column=1)
 
     def on_connect():
-        """Handle the Connect button click."""
-        server_host = server_host_entry.get().strip()
-        server_port = server_port_entry.get().strip()
-        user_id = user_id_entry.get().strip()
-        input_sel = selected_input_device.get()
-        output_sel = selected_output_device.get()
-        if not (server_host and server_port and user_id and input_sel and output_sel):
-            log("Please fill in all fields and select devices.")
-            return
-        input_device_index = input_device_dict.get(input_sel)
-        output_device_index = output_device_dict.get(output_sel)
-        if connect_to_server(server_host, server_port, user_id, input_device_index, output_device_index):
-            log("Connection established.")
-        else:
-            log("Connection failed.")
+        """Handle the Connect button click in a separate thread."""
+        def connect_thread():
+            server_host = server_host_entry.get().strip()
+            server_port = server_port_entry.get().strip()
+            user_id = user_id_entry.get().strip()
+            input_sel = selected_input_device.get()
+            output_sel = selected_output_device.get()
+            if not (server_host and server_port and user_id and input_sel and output_sel):
+                log("Please fill in all fields and select devices.")
+                return
+            input_device_index = input_device_dict.get(input_sel)
+            output_device_index = output_device_dict.get(output_sel)
+            if connect_to_server(server_host, server_port, user_id, input_device_index, output_device_index):
+                log("Connection established.")
+            else:
+                log("Connection failed.")
+        threading.Thread(target=connect_thread, daemon=True).start()
 
     connect_button = tk.Button(conn_frame, text="Connect", width=12, command=on_connect)
     connect_button.grid(row=5, column=0, columnspan=2, pady=5)
