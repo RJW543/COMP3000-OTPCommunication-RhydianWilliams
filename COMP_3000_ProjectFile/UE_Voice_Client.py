@@ -1,4 +1,3 @@
-# client.py
 import socket
 import threading
 import tkinter as tk
@@ -314,7 +313,6 @@ def test_input_device(input_device_index, output_device_index):
         log(f"Test input error: {e}")
     pa_test.terminate()
 
-
 # --- GUI ---
 
 def run_client_gui():
@@ -337,12 +335,12 @@ def run_client_gui():
     tk.Label(conn_frame, text="Server Host:").grid(row=0, column=0, sticky="e")
     server_host_entry = tk.Entry(conn_frame)
     server_host_entry.grid(row=0, column=1)
-    server_host_entry.insert(0, "0.tcp.ngrok.io")  # Adjust as needed.
+    server_host_entry.insert(0, "0.tcp.ngrok.io")  
 
     tk.Label(conn_frame, text="Server Port:").grid(row=1, column=0, sticky="e")
     server_port_entry = tk.Entry(conn_frame)
     server_port_entry.grid(row=1, column=1)
-    server_port_entry.insert(0, "5000")  # Adjust as needed.
+    server_port_entry.insert(0, "5000")  
 
     tk.Label(conn_frame, text="Your User ID:").grid(row=2, column=0, sticky="e")
     user_id_entry = tk.Entry(conn_frame)
@@ -404,7 +402,8 @@ def run_client_gui():
             return
         input_index = input_device_dict[input_sel]
         output_index = output_device_dict[output_sel]
-        test_input_device(input_index, output_index)
+        # Run test_input_device in a separate thread to avoid blocking the GUI.
+        threading.Thread(target=test_input_device, args=(input_index, output_index), daemon=True).start()
 
     test_frame = tk.Frame(conn_frame)
     test_frame.grid(row=6, column=0, columnspan=2, pady=5)
