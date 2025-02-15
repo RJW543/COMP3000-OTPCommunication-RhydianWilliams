@@ -1,117 +1,217 @@
+# server.py
 import socket
 import threading
+import tkinter as tk
+import queue
+from pyngrok import ngrok
 
-# Forwarding server that relays audio data between two clients
+# Audio packet size
+CHUNK_SIZE = 1024
 
-HOST = "0.0.0.0"  # Listen on all interfaces
-PORT = 50007      # Arbitrary choice for the forwarding server port
+# Global dictionaries (protected by clients_lock)
+clients = {}       # { user_id: socket }
+pending_calls = {} # { callee_user_id: caller_user_id }
+active_calls = {}  # { user_id: peer_user_id }
+clients_lock = threading.Lock()
 
-clients = {}
+# Queue for log messages to the GUI
+log_queue = queue.Queue()
 
-calls_in_progress = {}
+def log(message):
+    log_queue.put(message)
+
+def process_log_queue(text_widget):
+    while not log_queue.empty():
+        msg = log_queue.get()
+        text_widget.insert(tk.END, msg + "\n")
+        text_widget.see(tk.END)
+    text_widget.after(100, process_log_queue, text_widget)
+
+def read_line(conn):
+    """Read from the socket until a newline; return the decoded string (without newline)."""
+    line = b""
+    while True:
+        ch = conn.recv(1)
+        if not ch:
+            break
+        if ch == b'\n':
+            break
+        line += ch
+    return line.decode('utf-8')
+
+def recvall(conn, n):
+    """Read exactly n bytes from conn (or return None if connection is closed)."""
+    data = b""
+    while len(data) < n:
+        packet = conn.recv(n - len(data))
+        if not packet:
+            return None
+        data += packet
+    return data
 
 def handle_client(conn, addr):
-    """
-    Handles client communication with the server.
-    Each client:
-      - Sends its user_id upon connection
-      - Waits for instructions (call requests, etc.)
-      - Sends audio if in a call
-    """
-    global clients, calls_in_progress
-    
+    log(f"New connection from {addr}")
+    user_id = None
     try:
-        # First message from client should be the user_id
-        user_id = conn.recv(1024).decode('utf-8')
-        if not user_id:
+        # Expect registration: "REGISTER <userID>\n"
+        reg_line = read_line(conn)
+        if not reg_line.startswith("REGISTER "):
+            log(f"Invalid registration from {addr}: {reg_line}")
+            conn.close()
             return
-        print(f"[SERVER] New connection from {addr}, user_id={user_id}")
-        
-        # Store this client
-        clients[user_id] = (conn, addr)
+        user_id = reg_line.split()[1].strip()
+        with clients_lock:
+            clients[user_id] = conn
+        log(f"Client registered: {user_id} from {addr}")
 
         while True:
-            data = conn.recv(4096)
-            if not data:
-                break
+            # Read a command line from the client.
+            command_line = read_line(conn)
+            if not command_line:
+                break  # connection closed
 
-            try:
-                message = data.decode('utf-8', errors='ignore')
-                if message.startswith("CALL|"):
-                    parts = message.split("|")
-                    if len(parts) == 2:
-                        target_id = parts[1]
-                        print(f"[SERVER] {user_id} wants to call {target_id}")
+            tokens = command_line.strip().split()
+            if not tokens:
+                continue
+            cmd = tokens[0].upper()
 
-                        # Inform the target about an incoming call
-                        if target_id in clients:
-                            target_conn, _ = clients[target_id]
-                            target_conn.sendall(f"INCOMING_CALL|{user_id}".encode('utf-8'))
-                        else:
-                            # If target is not online, send error back
-                            conn.sendall(f"ERROR|User {target_id} not found".encode('utf-8'))
-
-                elif message.startswith("ACCEPT|"):
-                    parts = message.split("|")
-                    if len(parts) == 2:
-                        caller_id = parts[1]
-                        print(f"[SERVER] {user_id} accepted call from {caller_id}")
-                        # Mark call in progress
-                        calls_in_progress[caller_id] = user_id
-                        calls_in_progress[user_id] = caller_id
-                        # Notify the caller that call is accepted
-                        if caller_id in clients:
-                            caller_conn, _ = clients[caller_id]
-                            caller_conn.sendall(f"CALL_ACCEPTED|{user_id}".encode('utf-8'))
-
-                elif message.startswith("AUDIO|"):
-                    # Actual audio data forwarding
-                    # The format is "AUDIO|<raw data>"
-                    header, raw_audio = data.split(b'|', 1)
-                    # Determine who we should forward to
-                    if user_id in calls_in_progress:
-                        target_id = calls_in_progress[user_id]
-                        if target_id in clients:
-                            target_conn, _ = clients[target_id]
-                            # Prepend "AUDIO|" again for the recipient
-                            target_conn.sendall(b"AUDIO|" + raw_audio)
+            with clients_lock:
+                if cmd == "CALL":
+                    # Caller: "CALL <destination>"
+                    if len(tokens) < 2:
+                        continue
+                    dest = tokens[1].strip()
+                    if dest not in clients:
+                        conn.sendall("CALL_FAILED User not online\n".encode())
+                        log(f"{user_id} attempted call to offline user {dest}")
+                    elif dest in active_calls or dest in pending_calls:
+                        conn.sendall("CALL_FAILED User busy\n".encode())
+                        log(f"{user_id} attempted call to busy user {dest}")
+                    elif user_id in active_calls or user_id in pending_calls.values():
+                        conn.sendall("CALL_FAILED You are already in a call or call pending\n".encode())
+                        log(f"{user_id} attempted call while already busy")
+                    else:
+                        # Store pending call: key = callee, value = caller.
+                        pending_calls[dest] = user_id
+                        # Notify destination
+                        try:
+                            clients[dest].sendall(f"INCOMING_CALL {user_id}\n".encode())
+                            log(f"Call from {user_id} to {dest} forwarded.")
+                        except Exception as e:
+                            log(f"Error notifying {dest}: {e}")
+                elif cmd == "ANSWER":
+                    # Callee answering: "ANSWER <caller>"
+                    if len(tokens) < 2:
+                        continue
+                    caller = tokens[1].strip()
+                    if user_id not in pending_calls or pending_calls.get(user_id) != caller:
+                        log(f"{user_id} sent ANSWER but no pending call from {caller}")
+                        continue
+                    # Remove from pending and mark active call (bidirectionally)
+                    del pending_calls[user_id]
+                    active_calls[user_id] = caller
+                    active_calls[caller] = user_id
+                    try:
+                        clients[caller].sendall(f"CALL_ACCEPTED {user_id}\n".encode())
+                        log(f"{user_id} answered call from {caller}. Call active.")
+                    except Exception as e:
+                        log(f"Error notifying {caller} of call acceptance: {e}")
+                elif cmd == "DECLINE":
+                    # Callee declining: "DECLINE <caller>"
+                    if len(tokens) < 2:
+                        continue
+                    caller = tokens[1].strip()
+                    if user_id in pending_calls and pending_calls.get(user_id) == caller:
+                        del pending_calls[user_id]
+                        try:
+                            clients[caller].sendall(f"CALL_DECLINED {user_id}\n".encode())
+                            log(f"{user_id} declined call from {caller}.")
+                        except Exception as e:
+                            log(f"Error notifying {caller} of call decline: {e}")
+                elif cmd == "VOICE":
+                    # Voice data follows this header.
+                    data = recvall(conn, CHUNK_SIZE)
+                    if data is None:
+                        break
+                    # Forward to the call partner if in active call.
+                    if user_id in active_calls:
+                        partner = active_calls[user_id]
+                        if partner in clients:
+                            try:
+                                clients[partner].sendall("VOICE\n".encode())
+                                clients[partner].sendall(data)
+                            except Exception as e:
+                                log(f"Error forwarding voice from {user_id} to {partner}: {e}")
+                elif cmd == "HANGUP":
+                    # End the active call.
+                    if user_id in active_calls:
+                        partner = active_calls[user_id]
+                        try:
+                            if partner in clients:
+                                clients[partner].sendall("HANGUP\n".encode())
+                        except Exception as e:
+                            log(f"Error sending HANGUP to {partner}: {e}")
+                        # Remove both from active_calls.
+                        del active_calls[user_id]
+                        if partner in active_calls:
+                            del active_calls[partner]
+                        log(f"{user_id} hung up the call with {partner}")
                 else:
-                    pass
-            except:
-                if user_id in calls_in_progress:
-                    target_id = calls_in_progress[user_id]
-                    if target_id in clients:
-                        target_conn, _ = clients[target_id]
-                        # Prepend "AUDIO|" for the recipient
-                        target_conn.sendall(b"AUDIO|" + data)
-
+                    log(f"Unknown command from {user_id}: {command_line}")
     except Exception as e:
-        print(f"[SERVER] Exception: {e}")
-
+        log(f"Exception with client {addr}: {e}")
     finally:
-        print(f"[SERVER] Connection closed: {addr} user_id={user_id}")
+        with clients_lock:
+            if user_id:
+                # Clean up pending call if any.
+                if user_id in pending_calls:
+                    del pending_calls[user_id]
+                # If in an active call, notify the partner.
+                if user_id in active_calls:
+                    partner = active_calls[user_id]
+                    try:
+                        if partner in clients:
+                            clients[partner].sendall("HANGUP\n".encode())
+                    except Exception as e:
+                        log(f"Error notifying {partner} on disconnect: {e}")
+                    if partner in active_calls:
+                        del active_calls[partner]
+                    del active_calls[user_id]
+                # Remove from clients.
+                if user_id in clients:
+                    del clients[user_id]
+                log(f"Client {user_id} disconnected")
         conn.close()
-        if user_id in clients:
-            del clients[user_id]
-        # Remove from calls_in_progress
-        remove_list = []
-        for k, v in calls_in_progress.items():
-            if k == user_id or v == user_id:
-                remove_list.append(k)
-        for key in remove_list:
-            del calls_in_progress[key]
 
-def start_server():
-    print(f"[SERVER] Starting server on {HOST}:{PORT}")
+def start_server(port, text_widget):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((HOST, PORT))
+    server_socket.bind(("", port))
     server_socket.listen(5)
-    print(f"[SERVER] Server listening...")
+    log(f"Server listening on port {port}")
+
+    # Open an Ngrok tunnel for TCP.
+    public_url = ngrok.connect(port, "tcp")
+    log(f"Ngrok tunnel established: {public_url}")
+    text_widget.master.title(f"Server - {public_url}")
 
     while True:
-        conn, addr = server_socket.accept()
-        client_thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
-        client_thread.start()
+        try:
+            conn, addr = server_socket.accept()
+            threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
+        except Exception as e:
+            log(f"Server error: {e}")
+            break
+
+def run_server_gui():
+    root = tk.Tk()
+    root.title("Voice Chat Server")
+    text = tk.Text(root, height=20, width=60)
+    text.pack()
+    process_log_queue(text)
+    
+    port = 5000  
+    threading.Thread(target=start_server, args=(port, text), daemon=True).start()
+    root.mainloop()
 
 if __name__ == "__main__":
-    start_server()
+    run_server_gui()
