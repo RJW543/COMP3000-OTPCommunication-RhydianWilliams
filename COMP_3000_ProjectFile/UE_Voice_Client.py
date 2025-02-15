@@ -1,195 +1,184 @@
 import socket
 import threading
+import tkinter as tk
+from tkinter import messagebox
 import pyaudio
 import time
+
+SERVER_HOST = "127.0.0.1"
+SERVER_PORT = 50007
 
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 44100
+RATE = 16000
 
-# Global flags/states
-running = True
-in_call = False
-call_partner = None
-pending_caller = None  # Set when we get "INCOMING_CALL <caller>"
+class VoiceClient:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Simple Voice Call Demo")
+        
+        # UI Elements
+        tk.Label(master, text="Your User ID:").grid(row=0, column=0, padx=5, pady=5)
+        self.user_id_entry = tk.Entry(master)
+        self.user_id_entry.grid(row=0, column=1, padx=5, pady=5)
 
-# PyAudio streams
-p = pyaudio.PyAudio()
-input_stream = None
-output_stream = None
+        tk.Label(master, text="Call Target ID:").grid(row=1, column=0, padx=5, pady=5)
+        self.target_id_entry = tk.Entry(master)
+        self.target_id_entry.grid(row=1, column=1, padx=5, pady=5)
 
-def read_line(sock):
-    """
-    Read from 'sock' until newline; returns the string (without newline).
-    Returns '' if connection closed.
-    """
-    line = b""
-    while True:
-        chunk = sock.recv(1)
-        if not chunk:
-            return ""
-        if chunk == b"\n":
-            break
-        line += chunk
-    return line.decode("utf-8", errors="ignore")
+        self.call_button = tk.Button(master, text="Call", command=self.call_user)
+        self.call_button.grid(row=2, column=0, padx=5, pady=5)
 
-def recvall(sock, n):
-    data = b""
-    while len(data) < n:
-        packet = sock.recv(n - len(data))
-        if not packet:
-            return None
-        data += packet
-    return data
+        self.accept_button = tk.Button(master, text="Accept Call", command=self.accept_call, state=tk.DISABLED)
+        self.accept_button.grid(row=2, column=1, padx=5, pady=5)
 
-def listen_thread(sock):
-    """
-    Listen for commands/messages from the server:
-    - INCOMING_CALL <caller>
-    - CALL_ACCEPTED <callee>
-    - CALL_DECLINED <callee>
-    - CALL_FAILED <reason...>
-    - HANGUP
-    - VOICE
-    """
-    global in_call, call_partner, pending_caller, running
+        # Network and audio attributes
+        self.socket = None
+        self.user_id = None
+        self.target_id = None
+        self.is_calling = False
+        self.stream = None
+        self.audio_interface = pyaudio.PyAudio()
+        
+        # Start in a "disconnected" state
+        self.connected = False
+        self.incoming_call_from = None
 
-    while running:
-        line = read_line(sock)
-        if not line:
-            print("[!] Disconnected from server.")
-            break
+    def connect_to_server(self):
+        """
+        Connect to the forwarding server and send user ID.
+        """
+        if self.socket is None:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.connect((SERVER_HOST, SERVER_PORT))
+            self.socket.setblocking(True)
+            # Send user_id
+            self.socket.sendall(self.user_id.encode('utf-8'))
 
-        parts = line.strip().split()
-        if not parts:
-            continue
-        cmd = parts[0].upper()
+            # Start a thread to listen for server messages
+            listener_thread = threading.Thread(target=self.listen_server, daemon=True)
+            listener_thread.start()
 
-        if cmd == "INCOMING_CALL":
-            if len(parts) >= 2:
-                caller = parts[1]
-                pending_caller = caller
-                print(f"[!] Incoming call from '{caller}'. Type 'answer' or 'decline'.")
-        elif cmd == "CALL_ACCEPTED":
-            if len(parts) >= 2:
-                callee = parts[1]
-                in_call = True
-                call_partner = callee
-                print(f"[+] Call accepted. You are now in a call with '{callee}'.")
-        elif cmd == "CALL_DECLINED":
-            if len(parts) >= 2:
-                callee = parts[1]
-                print(f"[-] Your call was declined by '{callee}'.")
-        elif cmd == "CALL_FAILED":
-            reason = " ".join(parts[1:]) if len(parts) > 1 else "Unknown reason"
-            print(f"[-] Call failed: {reason}")
-        elif cmd == "HANGUP":
-            print("[!] Call ended by other party.")
-            in_call = False
-            call_partner = None
-        elif cmd == "VOICE":
-            # Next CHUNK bytes are audio data
-            data = recvall(sock, CHUNK)
-            if data and in_call:
-                output_stream.write(data)
-        else:
-            print(f"[?] Unknown server message: {line}")
+            self.connected = True
 
-def audio_send_thread(sock):
-    """
-    Continuously capture audio from the mic and send it to the server whenever we're in a call.
-    """
-    global in_call, running
-
-    while running:
-        if in_call:
+    def listen_server(self):
+        """
+        Listen for server messages such as INCOMING_CALL, CALL_ACCEPTED, or AUDIO data.
+        """
+        while True:
             try:
-                data = input_stream.read(CHUNK, exception_on_overflow=False)
-                sock.sendall(b"VOICE\n")
-                sock.sendall(data)
+                data = self.socket.recv(4096)
+                if not data:
+                    break
+
+                if data.startswith(b"INCOMING_CALL|"):
+                    # Format: INCOMING_CALL|<caller_id>
+                    parts = data.decode('utf-8').split("|")
+                    if len(parts) == 2:
+                        caller_id = parts[1]
+                        self.incoming_call_from = caller_id
+                        print(f"[CLIENT] Incoming call from {caller_id}")
+                        # Enable Accept button
+                        self.accept_button.config(state=tk.NORMAL)
+                        messagebox.showinfo("Incoming Call", f"Call from {caller_id}")
+
+                elif data.startswith(b"CALL_ACCEPTED|"):
+                    # Format: CALL_ACCEPTED|<target_id>
+                    parts = data.decode('utf-8').split("|")
+                    if len(parts) == 2:
+                        target_id = parts[1]
+                        print(f"[CLIENT] Call accepted by {target_id}")
+                        self.is_calling = True
+                        self.start_audio_stream()
+
+                elif data.startswith(b"ERROR|"):
+                    msg = data.decode('utf-8')
+                    print("[CLIENT] " + msg)
+                    messagebox.showerror("Error", msg)
+
+                elif data.startswith(b"AUDIO|"):
+                    # Extract raw audio after "AUDIO|"
+                    header, raw_audio = data.split(b'|', 1)
+                    if self.stream is not None:
+                        self.stream.write(raw_audio)
+                else:
+                    # Possibly raw audio fallback
+                    # Not used in this simple example
+                    pass
+
             except Exception as e:
-                print(f"[!] Error sending audio: {e}")
-                in_call = False
+                print("[CLIENT] Exception while listening to server:", e)
+                break
+
+    def call_user(self):
+        """
+        Initiate a call to the target user.
+        """
+        if not self.connected:
+            # Connect on-demand if not connected
+            self.user_id = self.user_id_entry.get().strip()
+            if not self.user_id:
+                messagebox.showerror("Error", "Please enter your user ID first!")
+                return
+            self.connect_to_server()
+
+        self.target_id = self.target_id_entry.get().strip()
+        if self.target_id:
+            message = f"CALL|{self.target_id}"
+            self.socket.sendall(message.encode('utf-8'))
+            print(f"[CLIENT] Initiated call to {self.target_id}")
         else:
-            time.sleep(0.1)
+            messagebox.showerror("Error", "Please enter a target user ID.")
+
+    def accept_call(self):
+        """
+        Accept an incoming call from self.incoming_call_from.
+        """
+        if self.incoming_call_from:
+            message = f"ACCEPT|{self.incoming_call_from}"
+            self.socket.sendall(message.encode('utf-8'))
+            # Disable Accept button
+            self.accept_button.config(state=tk.DISABLED)
+            self.is_calling = True
+            self.start_audio_stream()
+        else:
+            messagebox.showerror("Error", "No incoming call to accept.")
+
+    def start_audio_stream(self):
+        """
+        Start capturing audio from mic and sending to server.
+        Also prepare for playback.
+        """
+        # Initialise PyAudio streaming
+        if self.stream is None:
+            self.stream = self.audio_interface.open(format=FORMAT,
+                                                    channels=CHANNELS,
+                                                    rate=RATE,
+                                                    input=True,
+                                                    output=True,
+                                                    frames_per_buffer=CHUNK)
+        # Start a thread to capture audio from microphone and send to server
+        capture_thread = threading.Thread(target=self.capture_audio, daemon=True)
+        capture_thread.start()
+
+    def capture_audio(self):
+        """
+        Continuously capture mic audio and send to server as 'AUDIO|' packets.
+        """
+        while self.is_calling:
+            try:
+                data = self.stream.read(CHUNK, exception_on_overflow=False)
+                self.socket.sendall(b"AUDIO|" + data)
+            except Exception as e:
+                print("[CLIENT] Audio capture error:", e)
+                break
+        print("[CLIENT] Stopped capturing audio.")
 
 def main():
-    global running, in_call, call_partner, pending_caller
-    global input_stream, output_stream
-
-    # Prompt user for server connection info
-    host = input("Server host/IP (e.g. 192.168.1.10 or your VPS IP): ").strip()
-    port = int(input("Server port (default 5000): ").strip())
-    user_id = input("Your user ID (e.g. alice): ").strip()
-
-    # Connect to server
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((host, port))
-    print("[+] Connected to server.")
-    sock.sendall(f"REGISTER {user_id}\n".encode())
-
-    # Initialise PyAudio
-    pa = pyaudio.PyAudio()
-    input_stream = pa.open(format=FORMAT,
-                           channels=CHANNELS,
-                           rate=RATE,
-                           input=True,
-                           frames_per_buffer=CHUNK)
-    output_stream = pa.open(format=FORMAT,
-                            channels=CHANNELS,
-                            rate=RATE,
-                            output=True,
-                            frames_per_buffer=CHUNK)
-
-    # Start threads
-    threading.Thread(target=listen_thread, args=(sock,), daemon=True).start()
-    threading.Thread(target=audio_send_thread, args=(sock,), daemon=True).start()
-
-    # Simple command loop
-    print("\nCommands:")
-    print("  call <user>   - Call another user")
-    print("  answer        - Answer incoming call")
-    print("  decline       - Decline incoming call")
-    print("  hangup        - Hang up current call")
-    print("  exit          - Quit client\n")
-
-    while True:
-        cmd = input("> ").strip().lower()
-        if cmd.startswith("call "):
-            _, dest_user = cmd.split(" ", 1)
-            sock.sendall(f"CALL {dest_user}\n".encode())
-        elif cmd == "answer":
-            if pending_caller:
-                sock.sendall(f"ANSWER {pending_caller}\n".encode())
-                pending_caller = None
-            else:
-                print("No incoming call to answer.")
-        elif cmd == "decline":
-            if pending_caller:
-                sock.sendall(f"DECLINE {pending_caller}\n".encode())
-                pending_caller = None
-            else:
-                print("No incoming call to decline.")
-        elif cmd == "hangup":
-            if in_call:
-                sock.sendall(b"HANGUP\n")
-                in_call = False
-                call_partner = None
-            else:
-                print("Not in a call.")
-        elif cmd == "exit":
-            print("[+] Exiting...")
-            running = False
-            sock.close()
-            break
-        else:
-            print("Unknown command. Try: call <user>, answer, decline, hangup, exit")
-
-    # Cleanup PyAudio
-    input_stream.close()
-    output_stream.close()
-    pa.terminate()
+    root = tk.Tk()
+    client_app = VoiceClient(root)
+    root.mainloop()
 
 if __name__ == "__main__":
     main()

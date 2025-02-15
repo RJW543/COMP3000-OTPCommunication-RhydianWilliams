@@ -1,208 +1,117 @@
 import socket
 import threading
 
-CHUNK = 1024
+# Forwarding server that relays audio data between two clients
 
-# Global dictionaries protected by a lock
-clients = {}        # { user_id: (socket, address) }
-pending_calls = {}  # { callee_user_id: caller_user_id }
-active_calls = {}   # { user_id: partner_user_id }
-lock = threading.Lock()
+HOST = "0.0.0.0"  # Listen on all interfaces
+PORT = 50007      # Arbitrary choice for the forwarding server port
 
-def read_line(conn):
-    """
-    Read until newline from 'conn'; returns the decoded line (without newline).
-    Returns an empty string if the connection is closed.
-    """
-    line = b""
-    while True:
-        chunk = conn.recv(1)
-        if not chunk:
-            return ""
-        if chunk == b"\n":
-            break
-        line += chunk
-    return line.decode("utf-8", errors="ignore")
+clients = {}
 
-def recvall(conn, n):
-    """
-    Receive exactly 'n' bytes or return None if connection is closed prematurely.
-    """
-    data = b""
-    while len(data) < n:
-        part = conn.recv(n - len(data))
-        if not part:
-            return None
-        data += part
-    return data
+calls_in_progress = {}
 
 def handle_client(conn, addr):
     """
-    Per-client loop. Expects "REGISTER <user_id>" first.
-    Then handles commands (CALL, ANSWER, DECLINE, VOICE, HANGUP).
-    Forwards audio data to the correct partner.
+    Handles client communication with the server.
+    Each client:
+      - Sends its user_id upon connection
+      - Waits for instructions (call requests, etc.)
+      - Sends audio if in a call
     """
-    print(f"[+] New connection from {addr}")
-
-    user_id = None
+    global clients, calls_in_progress
+    
     try:
-        # First message must be: REGISTER <user_id>
-        reg_line = read_line(conn)
-        if not reg_line.startswith("REGISTER "):
-            print(f"[-] Invalid registration from {addr}: {reg_line}")
-            conn.close()
+        # First message from client should be the user_id
+        user_id = conn.recv(1024).decode('utf-8')
+        if not user_id:
             return
-        user_id = reg_line.split()[1]
-        with lock:
-            clients[user_id] = (conn, addr)
-        print(f"[+] Registered user '{user_id}' from {addr}")
+        print(f"[SERVER] New connection from {addr}, user_id={user_id}")
+        
+        # Store this client
+        clients[user_id] = (conn, addr)
 
         while True:
-            line = read_line(conn)
-            if not line:  # connection closed
+            data = conn.recv(4096)
+            if not data:
                 break
 
-            parts = line.strip().split()
-            if not parts:
-                continue
-            cmd = parts[0].upper()
+            try:
+                message = data.decode('utf-8', errors='ignore')
+                if message.startswith("CALL|"):
+                    parts = message.split("|")
+                    if len(parts) == 2:
+                        target_id = parts[1]
+                        print(f"[SERVER] {user_id} wants to call {target_id}")
 
-            with lock:
-                if cmd == "CALL":
-                    # CALL <destination_user_id>
-                    if len(parts) < 2:
-                        continue
-                    dest = parts[1]
-                    if dest not in clients:
-                        # Destination user is offline
-                        conn.sendall(b"CALL_FAILED User not online\n")
-                        print(f"[-] {user_id} tried calling offline user {dest}")
-                    elif dest in active_calls or dest in pending_calls:
-                        # Destination is busy
-                        conn.sendall(b"CALL_FAILED User busy\n")
-                        print(f"[-] {user_id} tried calling busy user {dest}")
-                    elif user_id in active_calls or user_id in pending_calls.values():
-                        # Caller is already in a call or pending
-                        conn.sendall(b"CALL_FAILED You are already in a call\n")
-                    else:
-                        # Create a pending call: callee -> caller
-                        pending_calls[dest] = user_id
-                        callee_conn, _ = clients[dest]
-                        try:
-                            callee_conn.sendall(f"INCOMING_CALL {user_id}\n".encode())
-                        except:
-                            pass
-                        print(f"[+] {user_id} calling {dest}")
+                        # Inform the target about an incoming call
+                        if target_id in clients:
+                            target_conn, _ = clients[target_id]
+                            target_conn.sendall(f"INCOMING_CALL|{user_id}".encode('utf-8'))
+                        else:
+                            # If target is not online, send error back
+                            conn.sendall(f"ERROR|User {target_id} not found".encode('utf-8'))
 
-                elif cmd == "ANSWER":
-                    # ANSWER <caller_user_id>
-                    if len(parts) < 2:
-                        continue
-                    caller = parts[1]
-                    # Check if there's a pending call from <caller> to <user_id>
-                    if user_id not in pending_calls or pending_calls[user_id] != caller:
-                        print(f"[-] {user_id} answered but no pending call from {caller}")
-                        continue
-                    # Move from pending_calls to active_calls
-                    del pending_calls[user_id]
-                    active_calls[user_id] = caller
-                    active_calls[caller] = user_id
-                    caller_conn, _ = clients[caller]
-                    try:
-                        caller_conn.sendall(f"CALL_ACCEPTED {user_id}\n".encode())
-                    except:
-                        pass
-                    print(f"[+] {user_id} answered call from {caller}")
+                elif message.startswith("ACCEPT|"):
+                    parts = message.split("|")
+                    if len(parts) == 2:
+                        caller_id = parts[1]
+                        print(f"[SERVER] {user_id} accepted call from {caller_id}")
+                        # Mark call in progress
+                        calls_in_progress[caller_id] = user_id
+                        calls_in_progress[user_id] = caller_id
+                        # Notify the caller that call is accepted
+                        if caller_id in clients:
+                            caller_conn, _ = clients[caller_id]
+                            caller_conn.sendall(f"CALL_ACCEPTED|{user_id}".encode('utf-8'))
 
-                elif cmd == "DECLINE":
-                    # DECLINE <caller_user_id>
-                    if len(parts) < 2:
-                        continue
-                    caller = parts[1]
-                    if user_id in pending_calls and pending_calls[user_id] == caller:
-                        del pending_calls[user_id]
-                        caller_conn, _ = clients[caller]
-                        try:
-                            caller_conn.sendall(f"CALL_DECLINED {user_id}\n".encode())
-                        except:
-                            pass
-                        print(f"[-] {user_id} declined call from {caller}")
-
-                elif cmd == "VOICE":
-                    # Next CHUNK bytes are audio data to forward
-                    data = recvall(conn, CHUNK)
-                    if data is None:
-                        break
-                    if user_id in active_calls:
-                        partner = active_calls[user_id]
-                        if partner in clients:
-                            partner_conn, _ = clients[partner]
-                            try:
-                                partner_conn.sendall(b"VOICE\n")
-                                partner_conn.sendall(data)
-                            except:
-                                pass
-
-                elif cmd == "HANGUP":
-                    if user_id in active_calls:
-                        partner = active_calls[user_id]
-                        partner_conn, _ = clients[partner]
-                        try:
-                            partner_conn.sendall(b"HANGUP\n")
-                        except:
-                            pass
-                        # Remove from active_calls both ways
-                        del active_calls[user_id]
-                        if partner in active_calls:
-                            del active_calls[partner]
-                        print(f"[!] {user_id} hung up call with {partner}")
-
+                elif message.startswith("AUDIO|"):
+                    # Actual audio data forwarding
+                    # The format is "AUDIO|<raw data>"
+                    header, raw_audio = data.split(b'|', 1)
+                    # Determine who we should forward to
+                    if user_id in calls_in_progress:
+                        target_id = calls_in_progress[user_id]
+                        if target_id in clients:
+                            target_conn, _ = clients[target_id]
+                            # Prepend "AUDIO|" again for the recipient
+                            target_conn.sendall(b"AUDIO|" + raw_audio)
                 else:
-                    print(f"[-] Unknown command from {user_id}: {line}")
+                    pass
+            except:
+                if user_id in calls_in_progress:
+                    target_id = calls_in_progress[user_id]
+                    if target_id in clients:
+                        target_conn, _ = clients[target_id]
+                        # Prepend "AUDIO|" for the recipient
+                        target_conn.sendall(b"AUDIO|" + data)
 
     except Exception as e:
-        print(f"[!] Exception with client {addr}: {e}")
+        print(f"[SERVER] Exception: {e}")
 
     finally:
-        # Cleanup when a client disconnects
-        with lock:
-            # Remove from clients
-            if user_id and user_id in clients:
-                del clients[user_id]
-            # Remove pending call if any
-            if user_id in pending_calls:
-                del pending_calls[user_id]
-            # If user was in an active call, notify partner
-            if user_id in active_calls:
-                partner = active_calls[user_id]
-                if partner in clients:
-                    partner_conn, _ = clients[partner]
-                    try:
-                        partner_conn.sendall(b"HANGUP\n")
-                    except:
-                        pass
-                del active_calls[user_id]
-                if partner in active_calls:
-                    del active_calls[partner]
-
+        print(f"[SERVER] Connection closed: {addr} user_id={user_id}")
         conn.close()
-        print(f"[x] Client '{user_id}' disconnected")
+        if user_id in clients:
+            del clients[user_id]
+        # Remove from calls_in_progress
+        remove_list = []
+        for k, v in calls_in_progress.items():
+            if k == user_id or v == user_id:
+                remove_list.append(k)
+        for key in remove_list:
+            del calls_in_progress[key]
 
-def main():
-    # The port we listen on 
-    port = 5000
-
+def start_server():
+    print(f"[SERVER] Starting server on {HOST}:{PORT}")
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # Bind to all interfaces so it can accept external connections
-    server_socket.bind(("0.0.0.0", port))
+    server_socket.bind((HOST, PORT))
     server_socket.listen(5)
-
-    print(f"[+] Server listening on 0.0.0.0:{port}")
-    print("    (If behind a router/firewall, you must port-forward 5000 to this machine.)")
+    print(f"[SERVER] Server listening...")
 
     while True:
         conn, addr = server_socket.accept()
-        threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
+        client_thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
+        client_thread.start()
 
 if __name__ == "__main__":
-    main()
+    start_server()
