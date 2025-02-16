@@ -18,28 +18,40 @@ DEFAULT_PORT = 50007
 class VoiceCallApp:
     def __init__(self, master):
         self.master = master
-        self.master.title("Python Voice Call")
+        self.master.title("Python Voice Call (Debug Version)")
 
         # PyAudio instance
         self.audio = pyaudio.PyAudio()
+
+        # Print all device info for debugging
+        print("=== Available Audio Devices ===")
+        device_count = self.audio.get_device_count()
+        for i in range(device_count):
+            dev_info = self.audio.get_device_info_by_index(i)
+            print(
+                f"Index {i}: {dev_info['name']} | "
+                f"IN channels: {dev_info.get('maxInputChannels', 0)} | "
+                f"OUT channels: {dev_info.get('maxOutputChannels', 0)}"
+            )
+        print("==============================\n")
 
         # Lists of devices
         self.input_devices = self.get_input_devices()
         self.output_devices = self.get_output_devices()
 
-        # Selected device indexes
+        # Selected device names (StringVars for Tkinter)
         self.selected_input_device_var = tk.StringVar()
         self.selected_output_device_var = tk.StringVar()
 
-        # If we have devices, initialize the selected device to the first one
+        # Initialsze defaults if available
         if self.input_devices:
-            self.selected_input_device_var.set(self.input_devices[0][1])  
+            self.selected_input_device_var.set(self.input_devices[0][1])  # Default to first input device name
         if self.output_devices:
-            self.selected_output_device_var.set(self.output_devices[0][1])  
+            self.selected_output_device_var.set(self.output_devices[0][1])  # Default to first output device name
 
         # Streams
-        self.stream_out = None
         self.stream_in = None
+        self.stream_out = None
 
         # Networking
         self.server_socket = None
@@ -90,7 +102,7 @@ class VoiceCallApp:
 
         # Input device selection
         tk.Label(device_frame, text="Microphone:").grid(row=0, column=0, padx=5, pady=2, sticky="e")
-        input_device_names = [d[1] for d in self.input_devices]  # just the names
+        input_device_names = [d[1] for d in self.input_devices]  # Just the names
         self.input_device_menu = ttk.OptionMenu(
             device_frame,
             self.selected_input_device_var,
@@ -130,7 +142,9 @@ class VoiceCallApp:
         self.end_call_button.pack(pady=5)
 
     def host_call(self):
-        """Start listening for an incoming connection on DEFAULT_HOST:DEFAULT_PORT."""
+        """
+        Start listening for an incoming connection on DEFAULT_HOST:DEFAULT_PORT.
+        """
         if self.running:
             self.status_label.config(text="Already in a call.", fg="blue")
             return
@@ -139,7 +153,6 @@ class VoiceCallApp:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.bind((DEFAULT_HOST, DEFAULT_PORT))
             self.server_socket.listen(1)
-
             self.status_label.config(text=f"Hosting on {DEFAULT_HOST}:{DEFAULT_PORT}... waiting for connection.", fg="orange")
 
             # Accept the connection in a separate thread
@@ -148,7 +161,9 @@ class VoiceCallApp:
             self.status_label.config(text=f"Error hosting: {e}", fg="red")
 
     def accept_connection(self):
-        """Accepts an incoming connection and starts the audio."""
+        """
+        Accepts an incoming connection and starts the audio.
+        """
         try:
             self.client_socket, addr = self.server_socket.accept()
             self.server_socket.close()
@@ -159,7 +174,9 @@ class VoiceCallApp:
             self.status_label.config(text=f"Accept error: {e}", fg="red")
 
     def join_call(self):
-        """Connect to a remote host specified in the entry box (host:port)."""
+        """
+        Connect to a remote host specified in the entry box (host:port).
+        """
         if self.running:
             self.status_label.config(text="Already in a call.", fg="blue")
             return
@@ -186,7 +203,9 @@ class VoiceCallApp:
             self.status_label.config(text=f"Connection error: {e}", fg="red")
 
     def call_setup(self):
-        """Once connected via self.client_socket, start audio streams and threads."""
+        """
+        Once connected via self.client_socket, start audio streams and threads.
+        """
         self.running = True
         self.end_call_button.config(state=tk.NORMAL)
         self.host_button.config(state=tk.DISABLED)
@@ -210,25 +229,35 @@ class VoiceCallApp:
                 output_dev_index = idx
                 break
 
-        # Start audio input stream
-        self.stream_in = self.audio.open(
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=RATE,
-            input=True,
-            frames_per_buffer=CHUNK,
-            input_device_index=input_dev_index
-        )
+        # Open input stream (microphone)
+        try:
+            self.stream_in = self.audio.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                frames_per_buffer=CHUNK,
+                input_device_index=input_dev_index
+            )
+        except Exception as e:
+            print(f"Error opening input device [{selected_input_name} / idx={input_dev_index}]: {e}")
+            self.end_call()
+            return
 
-        # Start audio output stream
-        self.stream_out = self.audio.open(
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=RATE,
-            output=True,
-            frames_per_buffer=CHUNK,
-            output_device_index=output_dev_index
-        )
+        # Open output stream (speakers/headphones)
+        try:
+            self.stream_out = self.audio.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                output=True,
+                frames_per_buffer=CHUNK,
+                output_device_index=output_dev_index
+            )
+        except Exception as e:
+            print(f"Error opening output device [{selected_output_name} / idx={output_dev_index}]: {e}")
+            self.end_call()
+            return
 
         # Start receiving and sending audio in separate threads
         self.listening_thread = threading.Thread(target=self.receive_audio, daemon=True)
@@ -237,30 +266,39 @@ class VoiceCallApp:
         self.sending_thread.start()
 
     def receive_audio(self):
-        """Continuously receive audio data from the connected socket and play it."""
+        """
+        Continuously receive audio data from the connected socket and play it.
+        """
         while self.running:
             try:
                 data = self.client_socket.recv(BUFFER_SIZE)
                 if not data:
-                    # Connection closed
+                    print("No data received; remote side closed connection.")
                     break
                 self.stream_out.write(data)
-            except:
+            except Exception as e:
+                print(f"Error in receive_audio: {e}")
                 break
         self.status_label.config(text="Disconnected", fg="red")
         self.cleanup_sockets()
 
     def send_audio(self):
-        """Continuously capture audio from microphone and send it to the connected socket."""
+        """
+        Continuously capture audio from microphone and send it to the connected socket.
+        """
         while self.running:
             try:
-                data = self.stream_in.read(CHUNK)
+                # Use exception_on_overflow=False to handle slow reads without error
+                data = self.stream_in.read(CHUNK, exception_on_overflow=False)
                 self.client_socket.sendall(data)
-            except:
+            except Exception as e:
+                print(f"Error in send_audio: {e}")
                 break
 
     def end_call(self):
-        """End the ongoing call and clean up."""
+        """
+        End the ongoing call and clean up.
+        """
         self.running = False
         self.status_label.config(text="Call ended", fg="red")
 
@@ -282,20 +320,22 @@ class VoiceCallApp:
             self.stream_out = None
 
     def cleanup_sockets(self):
-        """Close the open sockets."""
-        try:
-            if self.client_socket:
+        """
+        Close the open sockets.
+        """
+        if self.client_socket:
+            try:
                 self.client_socket.close()
-        except:
-            pass
-        self.client_socket = None
+            except:
+                pass
+            self.client_socket = None
 
-        try:
-            if self.server_socket:
+        if self.server_socket:
+            try:
                 self.server_socket.close()
-        except:
-            pass
-        self.server_socket = None
+            except:
+                pass
+            self.server_socket = None
 
 def main():
     root = tk.Tk()
