@@ -1,52 +1,49 @@
 import socket
 import threading
 import socketserver
+from pyngrok import ngrok
 
-HOST = '0.0.0.0'  # Listen on all interfaces
+HOST = '0.0.0.0'
 PORT = 65432
-clients = {}      # userID -> client_socket mapping
+
+clients = {}  # Maps userID -> (socket)
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
+    """
+    Each client connection is handled in a separate thread.
+    Do line-based reading from the socket to handle partial receives.
+    """
     def handle(self):
         client_socket = self.request
         user_id = None
+        buffer = ""  # Accumulate partial data here
+
         try:
-            # 1) Client sends its userID first
-            user_id = client_socket.recv(1024).decode("utf-8").strip()
-            if not user_id:
-                client_socket.sendall("Invalid userID. Connection closed.".encode("utf-8"))
-                client_socket.close()
-                return
-
-            # 2) Check if userID is already taken
-            if user_id in clients:
-                client_socket.sendall("UserID already taken. Connection closed.".encode("utf-8"))
-                client_socket.close()
-                print(f"Rejected connection from {self.client_address}: UserID '{user_id}' already taken.")
-                return
-
-            # 3) Store in global dictionary
-            clients[user_id] = client_socket
-            client_socket.sendall("Connected successfully.".encode("utf-8"))
-            print(f"User '{user_id}' connected from {self.client_address}")
-
-            # 4) Handle incoming audio data
             while True:
-                message = client_socket.recv(8192).decode("utf-8")
-                if not message:
-                    # Client disconnected or error
+                data = client_socket.recv(4096)
+                if not data:
+                    # Socket closed
                     break
 
-                # Expected format: "recipientID|otpIdentifier:encryptedHex"
-                try:
-                    recipient_id, payload = message.split("|", 1)
-                    print(f"Received audio for '{recipient_id}' from '{user_id}'.")
-                    forward_to_recipient(recipient_id, payload, user_id)
-                except ValueError:
-                    client_socket.sendall("Invalid chunk format.".encode("utf-8"))
+                buffer += data.decode("utf-8", errors="replace")
 
+                # Process any full lines
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    if user_id is None:
+                        # The first line we receive is the userID
+                        user_id = self.handle_user_id(line, client_socket)
+                        if not user_id:
+                            return  # Invalid or duplicate userID -> connection closed
+                    else:
+                        # Subsequent lines are audio chunks:
+                        self.handle_audio_chunk(line, user_id)
         except Exception as e:
-            print(f"Error handling {self.client_address}: {e}")
+            print(f"Error with client {self.client_address}: {e}")
         finally:
             # Clean up on disconnect
             if user_id in clients:
@@ -54,41 +51,94 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
                 print(f"User '{user_id}' disconnected.")
             client_socket.close()
 
+    def handle_user_id(self, line, client_socket):
+        """
+        The first line from the client is their userID.
+        Check if already taken, if so, close connection.
+        Otherwise, store them and return user_id.
+        """
+        user_id = line.strip()
+        if not user_id:
+            client_socket.sendall(b"Invalid userID.\n")
+            client_socket.close()
+            return None
+
+        if user_id in clients:
+            msg = "UserID already taken. Connection closed.\n"
+            client_socket.sendall(msg.encode("utf-8"))
+            client_socket.close()
+            print(f"Rejected connection {self.client_address}: userID '{user_id}' taken.")
+            return None
+
+        # Accept and store
+        clients[user_id] = client_socket
+        client_socket.sendall(b"Connected successfully.\n")
+        print(f"User '{user_id}' connected from {self.client_address}")
+        return user_id
+
+    def handle_audio_chunk(self, line, sender_id):
+        """
+        line format: "recipientID|otpIdentifier:hexData"
+        We'll forward it to recipient.
+        """
+        if "|" not in line or ":" not in line:
+            # Invalid format
+            self.request.sendall(b"Invalid chunk format.\n")
+            return
+
+        try:
+            recipient_id, payload = line.split("|", 1)
+            # payload format: "otpID:encryptedHex"
+        except ValueError:
+            self.request.sendall(b"Invalid chunk format.\n")
+            return
+
+        print(f"Received audio chunk for '{recipient_id}' from '{sender_id}'.")
+        forward_to_recipient(recipient_id, payload, sender_id)
+
 def forward_to_recipient(recipient_id, payload, sender_id):
     """
-    Forward "otpIdentifier:encryptedHex" to the recipient if online.
-    We'll send back: "senderID|otpIdentifier:encryptedHex".
+    Forward the line "sender_id|otpID:hexData" to recipient if connected.
+    We'll send it as: "senderID|otpID:hexData\n" (with a newline).
     """
     recipient_socket = clients.get(recipient_id)
     if recipient_socket:
         try:
-            full_message = f"{sender_id}|{payload}"
-            recipient_socket.sendall(full_message.encode("utf-8"))
+            full_line = f"{sender_id}|{payload}\n"
+            recipient_socket.sendall(full_line.encode("utf-8"))
         except Exception as e:
             print(f"Failed to send audio to '{recipient_id}': {e}")
-            del clients[recipient_id]
+            # Remove from clients
+            if recipient_id in clients:
+                del clients[recipient_id]
             recipient_socket.close()
     else:
-        # Optionally notify sender if recipient not found
+        # Optionally tell sender "not found"
         sender_socket = clients.get(sender_id)
         if sender_socket:
-            msg = f"Recipient '{recipient_id}' not found or not connected."
+            msg = f"Recipient '{recipient_id}' not found.\n"
             sender_socket.sendall(msg.encode("utf-8"))
-            print(f"User '{sender_id}' tried to send audio to unknown recipient '{recipient_id}'.")
+        print(f"User '{sender_id}' tried to send audio to unknown recipient '{recipient_id}'.")
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
 if __name__ == "__main__":
+    # Create server
     server = ThreadedTCPServer((HOST, PORT), ThreadedTCPRequestHandler)
+
+    # Start pyngrok tunnel (tcp)
+    public_url = ngrok.connect(PORT, "tcp")
+    print("PyNgrok tunnel open! Access info:")
+    print(" Public URL:", public_url.public_url)
+
     with server:
         ip, port = server.server_address
         server_thread = threading.Thread(target=server.serve_forever)
         server_thread.daemon = True
         server_thread.start()
-        print(f"OTP Voice Server running on {ip}:{port}")
-        print("Expose it with ngrok via `ngrok tcp 65432`\nPress Ctrl+C to stop.")
+        print(f"Local server running on {ip}:{port} (Ctrl+C to stop)")
 
         try:
             server_thread.join()
