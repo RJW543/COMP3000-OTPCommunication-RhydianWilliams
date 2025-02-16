@@ -1,3 +1,5 @@
+# otp_voice_client.py
+
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
 import socket
@@ -6,7 +8,15 @@ import pyaudio
 import fcntl
 from pathlib import Path
 
+# ---------------------------
+#       OTP FUNCTIONS
+# ---------------------------
 def load_otp_pages(file_name="otp_cipher.txt"):
+    """
+    Loads lines from otp_cipher.txt, each line has:
+    8-char identifier + random data
+    Example: ABC12345<lots_of_random_bytes>
+    """
     otp_pages = []
     file_path = Path(file_name)
     if not file_path.exists():
@@ -15,13 +25,16 @@ def load_otp_pages(file_name="otp_cipher.txt"):
         for line in file:
             line = line.strip()
             if len(line) < 8:
-                continue  # skip invalid lines
+                continue
             identifier = line[:8]
             content = line[8:]
             otp_pages.append((identifier, content))
     return otp_pages
 
 def load_used_pages(file_name="used_pages.txt"):
+    """
+    Returns a set of used OTP identifiers so we never reuse a page.
+    """
     file_path = Path(file_name)
     if not file_path.exists():
         return set()
@@ -29,158 +42,162 @@ def load_used_pages(file_name="used_pages.txt"):
         return {line.strip() for line in file}
 
 def save_used_page(identifier, file_name="used_pages.txt"):
+    """
+    Appends the used page identifier to used_pages.txt
+    """
     with open(file_name, "a") as file:
         file.write(f"{identifier}\n")
 
 def get_next_otp_page_linux(otp_pages, used_identifiers, lock_file="used_pages.lock"):
+    """
+    Finds the next unused OTP page with a file lock so multiple processes
+    don’t pick the same line at the same time (on Linux).
+    """
     with open(lock_file, "w") as lock:
-        # Acquire an exclusive lock
         fcntl.flock(lock, fcntl.LOCK_EX)
 
         for identifier, content in otp_pages:
             if identifier not in used_identifiers:
-                # Mark it as used immediately
                 save_used_page(identifier)
                 used_identifiers.add(identifier)
                 fcntl.flock(lock, fcntl.LOCK_UN)
                 return identifier, content
 
-        # Release the lock if no match found
         fcntl.flock(lock, fcntl.LOCK_UN)
     return None, None
 
 def encrypt_chunk(data_bytes, otp_content):
     """
-    data_bytes: raw bytes from microphone
-    otp_content: string containing random OTP characters
-    We need to XOR each byte with the ord of each OTP char.
+    XOR each byte of audio data with the corresponding character from the OTP content.
+    If OTP is shorter, the remainder is unencrypted (not secure in real usage).
     """
-    if len(otp_content) < len(data_bytes):
-        # If the OTP page is too short, we'll only encrypt partial
-        length = len(otp_content)
-    else:
-        length = len(data_bytes)
-
+    length = min(len(data_bytes), len(otp_content))
     encrypted = bytearray(len(data_bytes))
     for i in range(length):
         encrypted[i] = data_bytes[i] ^ ord(otp_content[i])
-
-    # If the OTP page is shorter than data_bytes, the remainder is unencrypted
+    # Remainder is unchanged if OTP shorter
     for i in range(length, len(data_bytes)):
         encrypted[i] = data_bytes[i]
-
     return bytes(encrypted)
 
 def decrypt_chunk(encrypted_bytes, otp_content):
     """
-    Reverse of encrypt_chunk (XOR is symmetric).
+    XOR is symmetric, so we do the same operation to decrypt.
     """
-    if len(otp_content) < len(encrypted_bytes):
-        length = len(otp_content)
-    else:
-        length = len(encrypted_bytes)
-
+    length = min(len(encrypted_bytes), len(otp_content))
     decrypted = bytearray(len(encrypted_bytes))
     for i in range(length):
         decrypted[i] = encrypted_bytes[i] ^ ord(otp_content[i])
     for i in range(length, len(encrypted_bytes)):
         decrypted[i] = encrypted_bytes[i]
-
     return bytes(decrypted)
 
-
+# ---------------------------
+#   GUI Voice Client
+# ---------------------------
 class OTPVoiceClient:
     def __init__(self, master):
         self.master = master
-        self.master.title("OTP Voice Client")
+        self.master.title("OTP Voice Client (ngrok Edition)")
 
-
+        # -----------------------
+        #  OTP Data & Bookkeeping
+        # -----------------------
         self.otp_pages = load_otp_pages("otp_cipher.txt")
         self.used_identifiers = load_used_pages("used_pages.txt")
 
-
+        # -----------------------
+        #    GUI Widgets
+        # -----------------------
         self.server_frame = tk.Frame(master)
-        self.server_frame.pack(padx=10, pady=10)
+        self.server_frame.pack(padx=10, pady=5)
 
-        tk.Label(self.server_frame, text="Server Host:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
-        self.host_entry = tk.Entry(self.server_frame, width=20)
-        self.host_entry.grid(row=0, column=1, padx=5, pady=5)
-        self.host_entry.insert(0, "127.0.0.1")  # default local
+        tk.Label(self.server_frame, text="Ngrok Host:").grid(row=0, column=0, padx=5, pady=3, sticky="e")
+        self.ngrok_host_entry = tk.Entry(self.server_frame, width=20)
+        self.ngrok_host_entry.grid(row=0, column=1, padx=5, pady=3)
+        self.ngrok_host_entry.insert(0, "0.tcp.ngrok.io")  # typical for ngrok
 
-        tk.Label(self.server_frame, text="Server Port:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
-        self.port_entry = tk.Entry(self.server_frame, width=20)
-        self.port_entry.grid(row=1, column=1, padx=5, pady=5)
-        self.port_entry.insert(0, "65432")  # must match otp_voice_server.py
+        tk.Label(self.server_frame, text="Ngrok Port:").grid(row=1, column=0, padx=5, pady=3, sticky="e")
+        self.ngrok_port_entry = tk.Entry(self.server_frame, width=20)
+        self.ngrok_port_entry.grid(row=1, column=1, padx=5, pady=3)
+        self.ngrok_port_entry.insert(0, "12345")  # example
 
-        tk.Label(self.server_frame, text="Your userID:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+        tk.Label(self.server_frame, text="Your userID:").grid(row=2, column=0, padx=5, pady=3, sticky="e")
         self.user_id_entry = tk.Entry(self.server_frame, width=20)
-        self.user_id_entry.grid(row=2, column=1, padx=5, pady=5)
+        self.user_id_entry.grid(row=2, column=1, padx=5, pady=3)
         self.user_id_entry.insert(0, "alice")
 
         tk.Button(self.server_frame, text="Connect", command=self.connect_to_server).grid(row=3, column=0, columnspan=2, pady=5)
 
+        # Frame for call controls
         self.call_frame = tk.Frame(master)
-        self.call_frame.pack(padx=10, pady=10)
+        self.call_frame.pack(padx=10, pady=5)
 
-        tk.Label(self.call_frame, text="Recipient userID:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        tk.Label(self.call_frame, text="Recipient userID:").grid(row=0, column=0, sticky="e", padx=5)
         self.recipient_id_entry = tk.Entry(self.call_frame, width=20)
-        self.recipient_id_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.recipient_id_entry.grid(row=0, column=1, padx=5)
         self.recipient_id_entry.insert(0, "bob")
 
-        # Start/Stop call buttons
         self.start_call_button = tk.Button(self.call_frame, text="Start Call", command=self.start_call, state=tk.DISABLED)
-        self.start_call_button.grid(row=1, column=0, padx=5, pady=5)
+        self.start_call_button.grid(row=1, column=0, padx=5, pady=3)
 
         self.stop_call_button = tk.Button(self.call_frame, text="Stop Call", command=self.stop_call, state=tk.DISABLED)
-        self.stop_call_button.grid(row=1, column=1, padx=5, pady=5)
+        self.stop_call_button.grid(row=1, column=1, padx=5, pady=3)
 
-        # Status area
+        # Log area
         self.log_area = scrolledtext.ScrolledText(master, height=10, width=50)
         self.log_area.pack(padx=10, pady=10)
         self.log_area.config(state=tk.DISABLED)
 
+        # -----------------------
+        #   Networking & Audio
+        # -----------------------
         self.client_socket = None
-        self.server_host = None
-        self.server_port = None
         self.user_id = None
-
+        self.recipient_id = None
 
         self.p = pyaudio.PyAudio()
         self.stream_in = None
         self.stream_out = None
         self.audio_running = False
 
+        # Audio config
         self.RATE = 44100
         self.CHUNK = 1024
 
     def connect_to_server(self):
         """
-        Connect to the TCP server, send userID, and wait for response.
-        If successful, enable the call controls.
+        Connect to the server using the provided ngrok host/port, send userID, wait for response.
         """
-        self.server_host = self.host_entry.get().strip()
-        self.server_port = int(self.port_entry.get().strip())
-        self.user_id = self.user_id_entry.get().strip()
+        host = self.ngrok_host_entry.get().strip()
+        port_str = self.ngrok_port_entry.get().strip()
+        if not port_str.isdigit():
+            self.log("Port must be a number.")
+            return
 
+        port = int(port_str)
+        self.user_id = self.user_id_entry.get().strip()
         if not self.user_id:
             self.log("Please enter a valid userID.")
             return
 
         try:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client_socket.connect((self.server_host, self.server_port))
+            self.client_socket.connect((host, port))
+            # Send our userID
             self.client_socket.sendall(self.user_id.encode("utf-8"))
+
             response = self.client_socket.recv(1024).decode("utf-8")
-            if "UserID already taken" in response or "Invalid" in response:
+            if "already taken" in response or "Invalid" in response:
                 self.log(f"Server response: {response}")
                 self.client_socket.close()
                 self.client_socket = None
                 return
 
-            self.log(f"Connected to server as '{self.user_id}': {response}")
+            self.log(f"Connected to {host}:{port} as '{self.user_id}'. Server says: {response}")
             self.start_call_button.config(state=tk.NORMAL)
 
-            # Start a thread to listen for incoming audio chunks
+            # Start thread to receive chunks
             threading.Thread(target=self.receive_chunks, daemon=True).start()
 
         except Exception as e:
@@ -188,14 +205,14 @@ class OTPVoiceClient:
 
     def start_call(self):
         """
-        Start capturing audio from mic, encrypting it, and sending to recipient.
+        Open input/output audio streams and start sending chunks to the specified recipient.
         """
-        recipient_id = self.recipient_id_entry.get().strip()
-        if not recipient_id:
+        self.recipient_id = self.recipient_id_entry.get().strip()
+        if not self.recipient_id:
             self.log("Please enter a recipient userID.")
             return
 
-        # Setup audio input (microphone)
+        # Open mic
         try:
             self.stream_in = self.p.open(
                 format=pyaudio.paInt16,
@@ -205,10 +222,10 @@ class OTPVoiceClient:
                 frames_per_buffer=self.CHUNK
             )
         except Exception as e:
-            self.log(f"Error opening microphone: {e}")
+            self.log(f"Failed to open microphone: {e}")
             return
 
-        # Setup audio output (speakers)
+        # Open speaker
         try:
             self.stream_out = self.p.open(
                 format=pyaudio.paInt16,
@@ -218,23 +235,27 @@ class OTPVoiceClient:
                 frames_per_buffer=self.CHUNK
             )
         except Exception as e:
-            self.log(f"Error opening speakers: {e}")
+            self.log(f"Failed to open speaker: {e}")
+            if self.stream_in:
+                self.stream_in.close()
             return
 
         self.audio_running = True
         self.start_call_button.config(state=tk.DISABLED)
         self.stop_call_button.config(state=tk.NORMAL)
+        self.log(f"Call started with recipient: {self.recipient_id}")
 
-        # Start a thread to continuously capture, encrypt, and send audio
-        threading.Thread(target=self.send_chunks, args=(recipient_id,), daemon=True).start()
+        # Start sending audio in background
+        threading.Thread(target=self.send_chunks, daemon=True).start()
 
     def stop_call(self):
         """
-        Stop sending/receiving audio.
+        Stop the audio threads and close streams.
         """
         self.audio_running = False
         self.stop_call_button.config(state=tk.DISABLED)
         self.start_call_button.config(state=tk.NORMAL)
+        self.log("Call stopped.")
 
         if self.stream_in:
             self.stream_in.stop_stream()
@@ -246,28 +267,26 @@ class OTPVoiceClient:
             self.stream_out.close()
             self.stream_out = None
 
-    def send_chunks(self, recipient_id):
+    def send_chunks(self):
         """
-        Continuously capture audio from mic, encrypt it with an OTP page, and send to server.
+        Continuously read mic audio, OTP-encrypt each chunk, and send to the server.
         """
-        while self.audio_running:
+        while self.audio_running and self.client_socket:
             try:
                 audio_data = self.stream_in.read(self.CHUNK, exception_on_overflow=False)
-                # Get an unused OTP page
+                # Grab next unused OTP page
                 otp_identifier, otp_content = get_next_otp_page_linux(self.otp_pages, self.used_identifiers)
                 if not otp_identifier or not otp_content:
-                    self.log("No more OTP pages available! Stopping call.")
+                    self.log("No more OTP pages available. Stopping call.")
                     self.stop_call()
                     break
 
-                # Encrypt
-                encrypted_data = encrypt_chunk(audio_data, otp_content)
+                encrypted_chunk = encrypt_chunk(audio_data, otp_content)
+                # Convert to hex so we can safely transmit over TCP as text
+                enc_hex = encrypted_chunk.hex()
 
-                # Build message: "recipientID|<identifier>:<encryptedBytes>"
-                # encode the encrypted bytes in a form that can be transmitted as a string.
-                encrypted_hex = encrypted_data.hex()
-                message = f"{recipient_id}|{otp_identifier}:{encrypted_hex}"
-
+                # Format: "recipientID|otpID:encHex"
+                message = f"{self.recipient_id}|{otp_identifier}:{enc_hex}"
                 self.client_socket.sendall(message.encode("utf-8"))
 
             except Exception as e:
@@ -278,27 +297,28 @@ class OTPVoiceClient:
 
     def receive_chunks(self):
         """
-        Continuously receive encrypted audio chunks from the server, decrypt them, and play them.
-        Format from server: "senderID|<identifier>:<encryptedHex>"
+        Continuously receive encrypted audio from server, decrypt, and play it.
+        Expected format: "senderID|otpID:encHex"
         """
         while True:
             try:
+                if not self.client_socket:
+                    break
+
                 data = self.client_socket.recv(8192).decode("utf-8")
                 if not data:
                     self.log("Server closed connection.")
                     break
 
-                # If the server can also send text error messages (like "Recipient 'X' not found"),
-                # detect if the format is valid or not.
-                # Expected valid: "senderID|ABC12345:ab12ef78..." 
+                # Could be an error message from server or a chunk
                 if "|" not in data or ":" not in data:
-                    self.log(f"Server says: {data}")
+                    self.log(f"Server message: {data}")
                     continue
 
                 sender_id, payload = data.split("|", 1)
-                otp_identifier, encrypted_hex = payload.split(":", 1)
+                otp_identifier, enc_hex = payload.split(":", 1)
 
-                # Find the OTP content for that identifier
+                # Find matching OTP content
                 otp_content = None
                 for ident, content in self.otp_pages:
                     if ident == otp_identifier:
@@ -306,21 +326,21 @@ class OTPVoiceClient:
                         break
 
                 if not otp_content:
-                    self.log(f"Received chunk with unknown OTP identifier {otp_identifier}. Cannot decrypt.")
+                    self.log(f"Unknown OTP identifier {otp_identifier}. Cannot decrypt.")
                     continue
 
-                # Mark the page as used
+                # Mark as used
                 save_used_page(otp_identifier)
                 self.used_identifiers.add(otp_identifier)
 
-                # Convert hex back to bytes
-                encrypted_bytes = bytes.fromhex(encrypted_hex)
+                encrypted_bytes = bytes.fromhex(enc_hex)
                 decrypted_bytes = decrypt_chunk(encrypted_bytes, otp_content)
 
                 if self.stream_out:
                     self.stream_out.write(decrypted_bytes)
                 else:
-                    self.log(f"Received audio from {sender_id}, but no output stream open.")
+                    self.log(f"Audio received from {sender_id}, but no output stream open.")
+
             except Exception as e:
                 self.log(f"receive_chunks error: {e}")
                 break
@@ -332,12 +352,11 @@ class OTPVoiceClient:
         self.master.quit()
 
     def log(self, msg):
-        """Helper to append text to the scrolled log area."""
+        """Append text to the log area."""
         self.log_area.config(state=tk.NORMAL)
         self.log_area.insert(tk.END, msg + "\n")
         self.log_area.config(state=tk.DISABLED)
         self.log_area.yview(tk.END)
-
 
 if __name__ == "__main__":
     root = tk.Tk()
