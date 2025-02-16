@@ -39,7 +39,7 @@ def generate_otp_page(identifier_length=8, page_length=5000):
     otp_content = generate_random_string(page_length - identifier_length)
     return identifier + otp_content
 
-def generate_otp_file(file_name="otp_cipher.txt", num_pages=100, page_length=5000):
+def generate_otp_file(file_name="otp_cipher.txt", num_pages=10000, page_length=5000):
     """Generate an OTP file with each page written vertically (one per line), seeded with true random data."""
     # Fetch a single true random seed
     random_seed = fetch_random_seed()
