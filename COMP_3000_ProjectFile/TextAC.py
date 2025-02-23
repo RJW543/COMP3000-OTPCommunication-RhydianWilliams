@@ -1,4 +1,3 @@
-# otp_client_internet3.py
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
 import socket
@@ -70,6 +69,7 @@ def decrypt_message(encrypted_message, otp_content):
         decrypted_message.append(decrypted_char)
     return ''.join(decrypted_message)
 
+
 # --- Client Class ---
 
 class OTPClient:
@@ -90,20 +90,23 @@ class OTPClient:
 
         self.ngrok_host_entry = tk.Entry(self.ngrok_frame, width=25)
         self.ngrok_host_entry.pack(side=tk.LEFT, padx=(0, 10))
-        self.ngrok_host_entry.insert(0, "0.tcp.ngrok.io")  # Example placeholder
+        # Optional: you can leave this blank or put an example
+        self.ngrok_host_entry.insert(0, "0.tcp.ngrok.io")
 
         self.ngrok_port_label = tk.Label(self.ngrok_frame, text="Ngrok Port:")
         self.ngrok_port_label.pack(side=tk.LEFT, padx=(0, 5))
 
         self.ngrok_port_entry = tk.Entry(self.ngrok_frame, width=10)
         self.ngrok_port_entry.pack(side=tk.LEFT, padx=(0, 10))
-        self.ngrok_port_entry.insert(0, "12345")  # Example placeholder
+        # Optional: you can leave this blank or put an example
+        self.ngrok_port_entry.insert(0, "12345")
 
         self.set_server_button = tk.Button(self.ngrok_frame, text="Set Server Address", command=self.set_server_address)
         self.set_server_button.pack(side=tk.LEFT)
 
         # Frame for user ID
         self.user_id_frame = tk.Frame(master)
+
         self.user_id_label = tk.Label(self.user_id_frame, text="Enter your userID:")
         self.user_id_label.pack(side=tk.LEFT)
 
@@ -123,10 +126,15 @@ class OTPClient:
         self.chat_area.pack(pady=5)
         self.chat_area.config(state=tk.DISABLED)
 
+        # Label + Entry for Recipient userID
+        self.recipient_label = tk.Label(self.message_frame, text="Recipient userID:")
+        self.recipient_label.pack()
         self.recipient_input = tk.Entry(self.message_frame, width=50)
         self.recipient_input.pack(pady=5)
-        self.recipient_input.insert(0, "Enter recipient userID:")
 
+        # Label + Entry for the message text
+        self.message_label = tk.Label(self.message_frame, text="Message to send:")
+        self.message_label.pack()
         self.text_input = tk.Entry(self.message_frame, width=50)
         self.text_input.pack(pady=5)
 
@@ -148,9 +156,11 @@ class OTPClient:
         if not port.isdigit():
             messagebox.showwarning("Warning", "Port must be a number.")
             return
+
         self.SERVER_HOST = host
         self.SERVER_PORT = int(port)
         messagebox.showinfo("Info", f"Server address set to {self.SERVER_HOST}:{self.SERVER_PORT}")
+
         # Enable the user ID frame
         self.user_id_frame.pack(padx=10, pady=10)
         # Disable the Ngrok input fields to prevent changes after setting
@@ -167,11 +177,13 @@ class OTPClient:
         if not self.user_id:
             messagebox.showwarning("Warning", "Please enter a userID.")
             return
+
         try:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.connect((self.SERVER_HOST, self.SERVER_PORT))
             self.client_socket.sendall(self.user_id.encode("utf-8"))
             response = self.client_socket.recv(1024).decode("utf-8")
+
             if response == "UserID already taken. Connection closed.":
                 messagebox.showerror("Error", response)
                 self.client_socket.close()
@@ -197,14 +209,9 @@ class OTPClient:
         return get_next_otp_page_linux(self.otp_pages, self.used_identifiers)
 
     def send_message(self):
-        raw_recipient = self.recipient_input.get().strip()
-        if raw_recipient.startswith("Enter recipient userID:"):
-            # If user hasn't changed the placeholder
-            messagebox.showwarning("Warning", "Please enter a valid recipient userID.")
-            return
-        recipient_id = raw_recipient.replace("Enter recipient userID:", "").strip()
-
+        recipient_id = self.recipient_input.get().strip()
         message = self.text_input.get()
+
         if not recipient_id:
             messagebox.showwarning("Warning", "Please enter a valid recipient userID.")
             return
@@ -256,12 +263,11 @@ class OTPClient:
                             self.update_chat_area(
                                 f"Received from {sender_id} (Decrypted): {decrypted_message}"
                             )
-
-                            # Mark this page as used after decryption
+                            # Mark this page as used
                             save_used_page(otp_identifier)
                             self.used_identifiers.add(otp_identifier)
                         else:
-                            # No matching OTP; show the encrypted message anyway
+                            # No matching OTP; show encrypted anyway
                             self.update_chat_area(
                                 f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}"
                             )
@@ -282,6 +288,7 @@ class OTPClient:
         self.chat_area.insert(tk.END, message + "\n")
         self.chat_area.config(state=tk.DISABLED)
         self.chat_area.yview(tk.END)
+
 
 if __name__ == "__main__":
     root = tk.Tk()

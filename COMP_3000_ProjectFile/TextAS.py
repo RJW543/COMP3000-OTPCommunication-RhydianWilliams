@@ -1,11 +1,12 @@
-# otp_server_host3.py
 import socket
 import threading
 import socketserver
+
 from pyngrok import ngrok
 
-HOST = '0.0.0.0'  # Listen on all interfaces
+HOST = "0.0.0.0"  # Listen on all interfaces
 PORT = 65432
+
 clients = {}  # userID -> client_socket mapping
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
@@ -33,11 +34,13 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
 
             # Handle incoming messages from this client
             while True:
-                message = client_socket.recv(4096).decode("utf-8")
-                if not message:
+                data = client_socket.recv(4096)
+                if not data:
                     break  # Client disconnected
+                message = data.decode("utf-8")
 
                 try:
+                    # Expect "recipient_id|encrypted_message"
                     recipient_id, encrypted_message = message.split("|", 1)
                     print(f"Received message for '{recipient_id}' from '{user_id}': {encrypted_message}")
                     send_message_to_recipient(recipient_id, encrypted_message, user_id)
@@ -68,7 +71,8 @@ def send_message_to_recipient(recipient_id, message, sender_id):
         # Notify the sender that the recipient doesn't exist
         sender_socket = clients.get(sender_id)
         if sender_socket:
-            sender_socket.sendall(f"Recipient '{recipient_id}' not found.".encode("utf-8"))
+            msg = f"Recipient '{recipient_id}' not found."
+            sender_socket.sendall(msg.encode("utf-8"))
             print(f"User '{sender_id}' tried to send message to unknown recipient '{recipient_id}'.")
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -76,20 +80,20 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
 if __name__ == "__main__":
+    # 1) Open the pyngrok tunnel for the specified PORT
     tunnel = ngrok.connect(PORT, "tcp")
     public_url = tunnel.public_url  # e.g. 'tcp://0.tcp.ngrok.io:12345'
-
-    # Parse host and port out of the public_url
-    # public_url is something like 'tcp://0.tcp.ngrok.io:17890'
+    # Parse host and port out of public_url
     parsed_url = public_url.replace("tcp://", "").split(":")
-    ngrok_host = parsed_url[0]
-    ngrok_port = parsed_url[1]
+    ngrok_host = parsed_url[0]   # e.g. 0.tcp.ngrok.io
+    ngrok_port = parsed_url[1]   # e.g. 12345
 
     print("==============================================")
     print(f"[NGROK] Public URL: {public_url}")
     print(f"[NGROK] Host: {ngrok_host}, Port: {ngrok_port}")
     print("==============================================\n")
 
+    # 2) Start the ThreadedTCPServer
     server = ThreadedTCPServer((HOST, PORT), ThreadedTCPRequestHandler)
     with server:
         ip, port = server.server_address
@@ -100,7 +104,7 @@ if __name__ == "__main__":
         print("Press Ctrl+C to stop.\n")
 
         try:
-            server_thread.join()  # Keep the main thread running
+            server_thread.join()  # Keep the main thread alive
         except KeyboardInterrupt:
             print("\nShutting down the server...")
             server.shutdown()
