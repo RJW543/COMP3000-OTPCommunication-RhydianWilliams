@@ -1,6 +1,7 @@
 import tkinter as tk
 import subprocess
 import sys
+from tkinter import messagebox
 
 class MainMenuApp:
     def __init__(self, master):
@@ -22,22 +23,21 @@ class MainMenuApp:
 
     def launch_server_gui(self):
         """
-        Launch Attempt2SG.py (the server GUI).
+        Launch TextASG.py (the server GUI).
         """
         try:
-            subprocess.Popen([sys.executable, "Attempt2SG.py"])
+            subprocess.Popen([sys.executable, "TextASG.py"])
         except FileNotFoundError:
-            # If Attempt2SG.py isn't found or can't be launched
-            tk.messagebox.showerror("Error", "Could not find or launch Attempt2SG.py")
+            messagebox.showerror("Error", "Could not find or launch TextASG.py")
 
     def launch_client_gui(self):
         """
-        Launch Attempt2C.py (the client GUI).
+        Launch TextAC.py (the client GUI).
         """
         try:
-            subprocess.Popen([sys.executable, "Attempt2C.py"])
+            subprocess.Popen([sys.executable, "TextAC.py"])
         except FileNotFoundError:
-            tk.messagebox.showerror("Error", "Could not find or launch Attempt2C.py")
+            messagebox.showerror("Error", "Could not find or launch TextAC.py")
 
     def launch_gen_gui(self):
         """
@@ -46,7 +46,7 @@ class MainMenuApp:
         try:
             subprocess.Popen([sys.executable, "GenGUI.py"])
         except FileNotFoundError:
-            tk.messagebox.showerror("Error", "Could not find or launch GenGUI.py")
+            messagebox.showerror("Error", "Could not find or launch GenGUI.py")
 
 
 def main():
