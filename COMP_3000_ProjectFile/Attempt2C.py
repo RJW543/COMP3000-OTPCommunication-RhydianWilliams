@@ -5,13 +5,14 @@ import threading
 import pyaudio
 import fcntl
 from pathlib import Path
+import string
 
 # ---------- OTP Utilities ----------
 def load_otp_pages(file_name="otp_cipher.txt"):
     """
     Each line should have:
-      8-char identifier + OTP data
-    Example: ABC12345<thousands_of_random_chars>
+      8-char identifier (alphanumeric) + random OTP content
+    Example: ABC12345<random_data>
     """
     pages = []
     path = Path(file_name)
@@ -20,14 +21,15 @@ def load_otp_pages(file_name="otp_cipher.txt"):
     with path.open("r") as f:
         for line in f:
             line = line.rstrip('\n')
+            # If the line is too short, skip it.
             if len(line) < 8:
                 continue
+            # The first 8 characters are the OTP id.
             identifier = line[:8]
             content = line[8:]
-            # Validate that the identifier is exactly 8 characters.
-            if len(identifier) != 8:
-                continue
+            # Add them to the pages
             pages.append((identifier, content))
+    print("Loaded OTP IDs (first 10 shown):", [p[0] for p in pages[:10]])  # Debug
     return pages
 
 def load_used_pages(file_name="used_pages.txt"):
@@ -44,6 +46,7 @@ def save_used_page(identifier, file_name="used_pages.txt"):
 def get_next_otp_page_linux(otp_pages, used_identifiers, lock_file="used_pages.lock"):
     """
     Use file locking on Linux to ensure we don't reuse the same OTP page concurrently.
+    On Windows, fcntl will not work, so be aware if you need concurrency across threads.
     """
     with open(lock_file, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -60,9 +63,9 @@ def encrypt_chunk(data_bytes, otp_content):
     length = min(len(data_bytes), len(otp_content))
     out = bytearray(len(data_bytes))
     for i in range(length):
-         out[i] = data_bytes[i] ^ ord(otp_content[i])
+        out[i] = data_bytes[i] ^ ord(otp_content[i])
     for i in range(length, len(data_bytes)):
-         out[i] = data_bytes[i]
+        out[i] = data_bytes[i]
     return bytes(out)
 
 def decrypt_chunk(data_bytes, otp_content):
@@ -383,6 +386,9 @@ class OTPVoiceClient:
                     self.stop_call()
                     break
 
+                # Debug log: which OTP ID we're using
+                self.log(f"DEBUG: Sending chunk with OTP id '{otp_id}'")
+
                 enc_bytes = encrypt_chunk(audio_data, otp_content)
                 enc_hex = enc_bytes.hex()
                 line = f"{self.recipient_id}|{otp_id}:{enc_hex}\n"
@@ -397,8 +403,11 @@ class OTPVoiceClient:
         """
         Find the OTP content for `otp_id`, decrypt, and play the audio.
         If no output stream is open, open it automatically.
-        If the OTP id isn’t found, try reloading the OTP pages and log available OTP ids.
+        If the OTP id isn’t found, try reloading the OTP pages.
         """
+        # Debug log: which OTP ID we received
+        self.log(f"DEBUG: decrypt_and_play called with OTP id '{otp_id}'")
+
         otp_id = otp_id.strip()
         otp_content = None
         # Try to find the OTP page in the already loaded pages.
@@ -416,8 +425,8 @@ class OTPVoiceClient:
                     otp_content = content
                     break
             if not otp_content:
-                available_ids = [ident for ident, _ in self.otp_pages]
-                self.log(f"Available OTP ids: {available_ids}")
+                available_ids = [ident for ident, _ in self.otp_pages[:10]]
+                self.log(f"Available OTP ids (first 10): {available_ids}")
                 self.log(f"Unknown OTP id '{otp_id}'. Cannot decrypt.")
                 return
 
