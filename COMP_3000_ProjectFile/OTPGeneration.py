@@ -34,22 +34,27 @@ def generate_random_string(length):
     return ''.join(random.choice(string.ascii_uppercase + string.digits + string.punctuation) for _ in range(length))
 
 def generate_otp_page(identifier_length=8, page_length=5000):
-    """Generate a single OTP page with a random identifier and OTP content."""
-    identifier = generate_random_string(identifier_length)
+    """
+    Generate a single OTP page.
+    The first part is a safe identifier (using only alphanumerics) and the rest is OTP content.
+    """
+    # Use only uppercase letters and digits for the identifier.
+    safe_chars = string.ascii_uppercase + string.digits
+    identifier = ''.join(random.choice(safe_chars) for _ in range(identifier_length))
+    # The rest of the page can still use punctuation.
     otp_content = generate_random_string(page_length - identifier_length)
     return identifier + otp_content
 
 def generate_otp_file(file_name="otp_cipher.txt", num_pages=10000, page_length=5000):
-    """Generate an OTP file with each page written vertically (one per line), seeded with true random data."""
-    # Fetch a single true random seed
+    """Generate an OTP file with each page written on a new line, seeded with true random data."""
+    # Fetch a single true random seed.
     random_seed = fetch_random_seed()
-    random.seed(random_seed)  # Seed the pseudo-random generator with true random data
+    random.seed(random_seed)  # Seed the pseudo-random generator with true random data.
 
     output_path = Path(file_name)
     with output_path.open("w") as file:
         for _ in range(num_pages):
             otp_page = generate_otp_page()
-            # Write each page on a new line
             file.write(otp_page + "\n")
     print(f"{num_pages} OTP pages have been generated and saved to {output_path.resolve()}.")
 
