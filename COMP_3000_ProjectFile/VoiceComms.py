@@ -4,6 +4,8 @@ import threading
 from pyngrok import ngrok
 from pyVoIP.VoIP import VoIPServer, VoIPClient
 
+#pip3 install pyVoIP --break-system-packages
+
 # Configuration
 NGROK_PORT = 5060  
 
