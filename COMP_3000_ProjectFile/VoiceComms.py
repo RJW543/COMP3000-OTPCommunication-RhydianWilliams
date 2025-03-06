@@ -6,6 +6,9 @@ from pyVoIP.VoIP import VoIPPhone
 
 # Configuration
 NGROK_PORT = 5060  # Standard SIP port
+USERNAME = "user"
+PASSWORD = "password"
+SERVER = "0.0.0.0"
 
 def start_ngrok():
     """Start ngrok tunnel."""
@@ -16,7 +19,7 @@ def start_ngrok():
 
 def start_voip_server():
     """Start a simple VoIP phone server."""
-    phone = VoIPPhone()
+    phone = VoIPPhone(SERVER, NGROK_PORT, USERNAME, PASSWORD)
     
     def on_incoming_call(call):
         call.answer()
@@ -33,7 +36,7 @@ def call_peer():
         return
     
     try:
-        phone = VoIPPhone()
+        phone = VoIPPhone(SERVER, NGROK_PORT, USERNAME, PASSWORD)
         phone.start()
         call = phone.call(peer_address)
         messagebox.showinfo("Success", "Calling " + peer_address)
