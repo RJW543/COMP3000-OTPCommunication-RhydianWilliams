@@ -390,70 +390,69 @@ class OTPVoiceClient:
 
         self.log("Stopped sending chunks.")
 
-def decrypt_and_play(self, sender_id, otp_id, enc_hex):
-    """
-    Find the OTP content for `otp_id`, decrypt, and play the audio.
-    If no output stream is open, open it automatically.
-    If the OTP id isn’t found, try reloading the OTP pages.
-    """
-    otp_id = otp_id.strip()
-    otp_content = None
-    # Try to find the OTP page in the already loaded pages.
-    for ident, content in self.otp_pages:
-        if ident.strip() == otp_id:
-            otp_content = content
-            break
-
-    # If not found, attempt to reload the OTP pages.
-    if not otp_content:
-        self.log(f"OTP id '{otp_id}' not found. Reloading OTP pages...")
-        self.otp_pages = load_otp_pages("otp_cipher.txt")
+    def decrypt_and_play(self, sender_id, otp_id, enc_hex):
+        """
+        Find the OTP content for `otp_id`, decrypt, and play the audio.
+        If no output stream is open, open it automatically.
+        If the OTP id isn’t found, try reloading the OTP pages.
+        """
+        otp_id = otp_id.strip()
+        otp_content = None
+        # Try to find the OTP page in the already loaded pages.
         for ident, content in self.otp_pages:
             if ident.strip() == otp_id:
                 otp_content = content
                 break
+
+        # If not found, attempt to reload the OTP pages.
         if not otp_content:
-            self.log(f"Unknown OTP id '{otp_id}'. Cannot decrypt.")
-            return
-
-    # Mark the OTP page as used if not already marked.
-    if otp_id not in self.used_identifiers:
-        save_used_page(otp_id)
-        self.used_identifiers.add(otp_id)
-
-    # Convert the hex back to bytes and decrypt.
-    try:
-        encrypted_bytes = bytes.fromhex(enc_hex)
-    except ValueError as e:
-        self.log(f"Failed to decode hex data: {e}")
-        return
-    decrypted = decrypt_chunk(encrypted_bytes, otp_content)
-
-    # If no output stream is open, attempt to open it.
-    if not self.stream_out:
-        try:
-            out_dev_idx = None
-            for idx, name in self.output_devices:
-                if name == self.selected_output_var.get():
-                    out_dev_idx = idx
+            self.log(f"OTP id '{otp_id}' not found. Reloading OTP pages...")
+            self.otp_pages = load_otp_pages("otp_cipher.txt")
+            for ident, content in self.otp_pages:
+                if ident.strip() == otp_id:
+                    otp_content = content
                     break
+            if not otp_content:
+                self.log(f"Unknown OTP id '{otp_id}'. Cannot decrypt.")
+                return
 
-            self.stream_out = self.p.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=self.RATE,
-                output=True,
-                frames_per_buffer=self.CHUNK,
-                output_device_index=out_dev_idx
-            )
-            self.log("Output stream automatically opened for incoming audio.")
-        except Exception as e:
-            self.log(f"Failed to open output stream automatically: {e}")
+        # Mark the OTP page as used if not already marked.
+        if otp_id not in self.used_identifiers:
+            save_used_page(otp_id)
+            self.used_identifiers.add(otp_id)
+
+        # Convert the hex back to bytes and decrypt.
+        try:
+            encrypted_bytes = bytes.fromhex(enc_hex)
+        except ValueError as e:
+            self.log(f"Failed to decode hex data: {e}")
             return
+        decrypted = decrypt_chunk(encrypted_bytes, otp_content)
 
-    # Write the decrypted audio to the output stream.
-    self.stream_out.write(decrypted)
+        # If no output stream is open, attempt to open it.
+        if not self.stream_out:
+            try:
+                out_dev_idx = None
+                for idx, name in self.output_devices:
+                    if name == self.selected_output_var.get():
+                        out_dev_idx = idx
+                        break
 
+                self.stream_out = self.p.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=self.RATE,
+                    output=True,
+                    frames_per_buffer=self.CHUNK,
+                    output_device_index=out_dev_idx
+                )
+                self.log("Output stream automatically opened for incoming audio.")
+            except Exception as e:
+                self.log(f"Failed to open output stream automatically: {e}")
+                return
+
+        # Write the decrypted audio to the output stream.
+        self.stream_out.write(decrypted)
 
 if __name__ == "__main__":
     root = tk.Tk()
