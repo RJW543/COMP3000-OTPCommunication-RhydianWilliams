@@ -9,8 +9,8 @@ from pathlib import Path
 # ---------- OTP Utilities ----------
 def load_otp_pages(file_name="otp_cipher.txt"):
     """
-    Each line:
-      8-char identifier + random data
+    Each line should have:
+      8-char identifier + OTP data
     Example: ABC12345<thousands_of_random_chars>
     """
     pages = []
@@ -19,11 +19,14 @@ def load_otp_pages(file_name="otp_cipher.txt"):
         return pages
     with path.open("r") as f:
         for line in f:
-            line = line.strip()
+            line = line.rstrip('\n')
             if len(line) < 8:
                 continue
             identifier = line[:8]
             content = line[8:]
+            # Validate that the identifier is exactly 8 characters.
+            if len(identifier) != 8:
+                continue
             pages.append((identifier, content))
     return pages
 
@@ -40,7 +43,7 @@ def save_used_page(identifier, file_name="used_pages.txt"):
 
 def get_next_otp_page_linux(otp_pages, used_identifiers, lock_file="used_pages.lock"):
     """
-    Use file locking on Linux to ensure we don't reuse the same line concurrently.
+    Use file locking on Linux to ensure we don't reuse the same OTP page concurrently.
     """
     with open(lock_file, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -57,9 +60,9 @@ def encrypt_chunk(data_bytes, otp_content):
     length = min(len(data_bytes), len(otp_content))
     out = bytearray(len(data_bytes))
     for i in range(length):
-        out[i] = data_bytes[i] ^ ord(otp_content[i])
+         out[i] = data_bytes[i] ^ ord(otp_content[i])
     for i in range(length, len(data_bytes)):
-        out[i] = data_bytes[i]
+         out[i] = data_bytes[i]
     return bytes(out)
 
 def decrypt_chunk(data_bytes, otp_content):
@@ -394,7 +397,7 @@ class OTPVoiceClient:
         """
         Find the OTP content for `otp_id`, decrypt, and play the audio.
         If no output stream is open, open it automatically.
-        If the OTP id isn’t found, try reloading the OTP pages.
+        If the OTP id isn’t found, try reloading the OTP pages and log available OTP ids.
         """
         otp_id = otp_id.strip()
         otp_content = None
@@ -413,6 +416,8 @@ class OTPVoiceClient:
                     otp_content = content
                     break
             if not otp_content:
+                available_ids = [ident for ident, _ in self.otp_pages]
+                self.log(f"Available OTP ids: {available_ids}")
                 self.log(f"Unknown OTP id '{otp_id}'. Cannot decrypt.")
                 return
 
