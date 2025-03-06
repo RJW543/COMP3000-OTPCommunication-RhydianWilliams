@@ -2,12 +2,10 @@ import tkinter as tk
 from tkinter import messagebox
 import threading
 from pyngrok import ngrok
-from pyVoIP.VoIP import VoIPServer, VoIPClient
-
-#pip3 install pyVoIP --break-system-packages
+from pyVoIP.VoIP import VoIPPhone
 
 # Configuration
-NGROK_PORT = 5060  
+NGROK_PORT = 5060  # Standard SIP port
 
 def start_ngrok():
     """Start ngrok tunnel."""
@@ -16,9 +14,15 @@ def start_ngrok():
     return public_url
 
 def start_voip_server():
-    """Start a simple VoIP server."""
-    server = VoIPServer("0.0.0.0", NGROK_PORT)
-    server.start()
+    """Start a simple VoIP phone server."""
+    phone = VoIPPhone()
+    
+    def on_incoming_call(call):
+        call.answer()
+        print("Incoming call answered!")
+
+    phone.on_call_received = on_incoming_call
+    phone.start()
 
 def call_peer():
     """Initiate a VoIP call to the entered peer."""
@@ -28,8 +32,9 @@ def call_peer():
         return
     
     try:
-        client = VoIPClient()
-        client.call(peer_address)
+        phone = VoIPPhone()
+        phone.start()
+        call = phone.call(peer_address)
         messagebox.showinfo("Success", "Calling " + peer_address)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to call: {str(e)}")
