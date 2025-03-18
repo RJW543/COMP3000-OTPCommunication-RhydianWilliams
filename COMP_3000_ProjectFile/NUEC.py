@@ -1,233 +1,143 @@
-#!/usr/bin/env python3
-
 import tkinter as tk
-from tkinter import ttk
-import pyaudio
 import socket
 import threading
+import speech_recognition as sr
+import pyttsx3
 
-class VoiceClient:
-    def __init__(self, master):
+class CombinedClientApp:
+    def __init__(self, master, server_ip="127.0.0.1", server_port=9999):
         self.master = master
-        self.master.title("UDP Voice Client")
+        self.master.title("Combined Client - Two-Way Audio Chat")
 
-        # Audio config
-        self.CHUNK = 1024
-        self.FORMAT = pyaudio.paInt16
-        self.CHANNELS = 1
-        self.RATE = 44100
+        # Server details
+        self.server_ip = server_ip
+        self.server_port = server_port
 
-        self.is_running = False
-        self.sock = None
-        self.send_thread = None
-        self.recv_thread = None
-        self.input_stream = None
-        self.output_stream = None
+        # State
+        self.client_name = None
+        self.running = True
 
-        self.p = pyaudio.PyAudio()
+        # TTS engine
+        self.tts_engine = pyttsx3.init()
 
+        # Create UI
+        self.create_widgets()
 
-        row = 0
-
-        ttk.Label(master, text="Server Host:").grid(row=row, column=0, padx=5, pady=5, sticky='e')
-        self.server_host_var = tk.StringVar(value="myexample.loclx.io")
-        ttk.Entry(master, textvariable=self.server_host_var).grid(row=row, column=1, padx=5, pady=5, sticky='w')
-        row += 1
-
-        ttk.Label(master, text="Server Port:").grid(row=row, column=0, padx=5, pady=5, sticky='e')
-        self.server_port_var = tk.StringVar(value="12345")
-        ttk.Entry(master, textvariable=self.server_port_var).grid(row=row, column=1, padx=5, pady=5, sticky='w')
-        row += 1
-
-        ttk.Label(master, text="Local Listen Port (for replies):").grid(row=row, column=0, padx=5, pady=5, sticky='e')
-        self.local_port_var = tk.StringVar(value="0")  # 0 => OS picks a free port
-        ttk.Entry(master, textvariable=self.local_port_var).grid(row=row, column=1, padx=5, pady=5, sticky='w')
-        row += 1
-
-        # Audio input device
-        ttk.Label(master, text="Audio Input Device:").grid(row=row, column=0, padx=5, pady=5, sticky='e')
-        self.input_device_list = self.get_input_devices()
-        default_input = self.input_device_list[0] if self.input_device_list else "Default"
-        self.input_device_var = tk.StringVar(value=default_input)
-        ttk.OptionMenu(
-            master,
-            self.input_device_var,
-            default_input,
-            *self.input_device_list
-        ).grid(row=row, column=1, padx=5, pady=5, sticky='w')
-        row += 1
-
-        # Audio output device
-        ttk.Label(master, text="Audio Output Device:").grid(row=row, column=0, padx=5, pady=5, sticky='e')
-        self.output_device_list = self.get_output_devices()
-        default_output = self.output_device_list[0] if self.output_device_list else "Default"
-        self.output_device_var = tk.StringVar(value=default_output)
-        ttk.OptionMenu(
-            master,
-            self.output_device_var,
-            default_output,
-            *self.output_device_list
-        ).grid(row=row, column=1, padx=5, pady=5, sticky='w')
-        row += 1
-
-        # Start/Stop
-        self.start_button = ttk.Button(master, text="Start", command=self.start_client)
-        self.start_button.grid(row=row, column=0, padx=5, pady=5, sticky='ew')
-
-        self.stop_button = ttk.Button(master, text="Stop", command=self.stop_client, state=tk.DISABLED)
-        self.stop_button.grid(row=row, column=1, padx=5, pady=5, sticky='ew')
-
-        # Cleanup
-        self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-
-    def get_input_devices(self):
-        """Return a list of *input-capable* device names."""
-        devices = []
-        count = self.p.get_device_count()
-        for i in range(count):
-            info = self.p.get_device_info_by_index(i)
-            if info.get('maxInputChannels', 0) > 0:
-                devices.append(info['name'])
-        return devices
-
-    def get_output_devices(self):
-        """Return a list of *output-capable* device names."""
-        devices = []
-        count = self.p.get_device_count()
-        for i in range(count):
-            info = self.p.get_device_info_by_index(i)
-            if info.get('maxOutputChannels', 0) > 0:
-                devices.append(info['name'])
-        return devices
-
-    def get_device_index_by_name(self, device_name, is_output=False):
-        """
-        Return PyAudio device index for the given device name,
-        ensuring we check input vs output capability as needed.
-        """
-        count = self.p.get_device_count()
-        for i in range(count):
-            info = self.p.get_device_info_by_index(i)
-            if info['name'] == device_name:
-                if is_output and info.get('maxOutputChannels', 0) > 0:
-                    return i
-                if not is_output and info.get('maxInputChannels', 0) > 0:
-                    return i
-        return None  
-
-    def start_client(self):
-        if self.is_running:
-            return
-
-        server_host = self.server_host_var.get().strip()
-        server_port = int(self.server_port_var.get().strip())
-        local_port = int(self.local_port_var.get().strip())
-
+        # Create a UDP socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Bind locally (any free port)
+        self.sock.bind(("", 0))
+
+        # Thread for receiving messages
+        self.listener_thread = threading.Thread(target=self.listen_for_messages, daemon=True)
+        self.listener_thread.start()
+
+    def create_widgets(self):
+        # Name entry
+        self.name_label = tk.Label(self.master, text="Enter your name (unique!):")
+        self.name_label.pack(pady=2)
+
+        self.name_entry = tk.Entry(self.master)
+        self.name_entry.pack(pady=2)
+
+        self.register_button = tk.Button(self.master, text="Register", command=self.register)
+        self.register_button.pack(pady=5)
+
+        self.record_button = tk.Button(self.master, text="Record & Send", command=self.record_and_send, state="disabled")
+        self.record_button.pack(pady=10)
+
+        self.status_label = tk.Label(self.master, text="Status: Not registered")
+        self.status_label.pack(pady=5)
+
+        self.last_received_label = tk.Label(self.master, text="Last Received: None")
+        self.last_received_label.pack(pady=5)
+
+    def register(self):
+        """
+        Register the client name with the server so the server knows how to forward messages to us.
+        """
+        name = self.name_entry.get().strip()
+        if not name:
+            self.status_label.config(text="Please enter a name before registering.")
+            return
+        self.client_name = name
+
+        # Send a registration packet: "REGISTER: <name>"
+        register_msg = f"REGISTER: {self.client_name}"
+        self.sock.sendto(register_msg.encode("utf-8"), (self.server_ip, self.server_port))
+        self.status_label.config(text=f"Registered as {self.client_name}.")
+        self.record_button.config(state="normal")
+
+    def record_and_send(self):
+        """
+        Capture audio, convert to text, and send to the server.
+        """
+        if not self.client_name:
+            self.status_label.config(text="You must register first!")
+            return
+
+        self.status_label.config(text="Status: Recording...")
+        self.master.update_idletasks()
+
+        r = sr.Recognizer()
+        with sr.Microphone() as source:
+            r.adjust_for_ambient_noise(source, duration=1)
+            audio_data = r.listen(source)
+
+        self.status_label.config(text="Status: Converting to text...")
+        self.master.update_idletasks()
+
         try:
-            self.sock.bind(('', local_port))  
-        except OSError as e:
-            print(f"Error binding local port {local_port}: {e}")
-            return
+            recognized_text = r.recognize_google(audio_data)
+            self.status_label.config(text=f"Sending: {recognized_text}")
 
-        input_device_index = self.get_device_index_by_name(self.input_device_var.get(), is_output=False)
-        output_device_index = self.get_device_index_by_name(self.output_device_var.get(), is_output=True)
+            # Format: "Name: text"
+            msg = f"{self.client_name}: {recognized_text}"
+            self.sock.sendto(msg.encode("utf-8"), (self.server_ip, self.server_port))
 
-        try:
-            self.input_stream = self.p.open(
-                format=self.FORMAT,
-                channels=self.CHANNELS,
-                rate=self.RATE,
-                input=True,
-                frames_per_buffer=self.CHUNK,
-                input_device_index=input_device_index
-            )
-            self.output_stream = self.p.open(
-                format=self.FORMAT,
-                channels=self.CHANNELS,
-                rate=self.RATE,
-                output=True,
-                frames_per_buffer=self.CHUNK,
-                output_device_index=output_device_index
-            )
-        except Exception as e:
-            print(f"Error opening audio streams: {e}")
-            self.sock.close()
-            self.sock = None
-            return
+            self.status_label.config(text="Status: Sent!")
+        except sr.UnknownValueError:
+            self.status_label.config(text="Could not understand audio.")
+        except sr.RequestError as e:
+            self.status_label.config(text=f"API error: {e}")
 
-        # Start threads
-        self.is_running = True
-        self.send_thread = threading.Thread(target=self.send_audio, args=(server_host, server_port))
-        self.recv_thread = threading.Thread(target=self.receive_audio)
-        self.send_thread.start()
-        self.recv_thread.start()
-
-        self.start_button.configure(state=tk.DISABLED)
-        self.stop_button.configure(state=tk.NORMAL)
-
-    def send_audio(self, server_host, server_port):
-        """Continuously read audio from mic and send to server."""
-        while self.is_running:
+    def listen_for_messages(self):
+        """
+        Thread loop that receives incoming text messages from the server and plays them via TTS.
+        """
+        while self.running:
             try:
-                data = self.input_stream.read(self.CHUNK, exception_on_overflow=False)
-                self.sock.sendto(data, (server_host, server_port))
+                data, addr = self.sock.recvfrom(4096)
+                text_received = data.decode("utf-8", errors="ignore").strip()
+                # Expect format: "OtherName: message"
+                if ":" not in text_received:
+                    continue
+                sender_name, message = text_received.split(":", 1)
+                sender_name = sender_name.strip()
+                message = message.strip()
+
+                # Update GUI
+                self.last_received_label.config(text=f"Last Received from {sender_name}: {message}")
+                self.status_label.config(text="Status: Speaking...")
+
+                # Speak
+                self.tts_engine.say(message)
+                self.tts_engine.runAndWait()
+
+                self.status_label.config(text="Status: Idle")
             except Exception as e:
-                print(f"Send audio error: {e}")
+                print(f"Client error receiving data: {e}")
                 break
-
-    def receive_audio(self):
-        """Continuously receive audio from server and play it."""
-        while self.is_running:
-            try:
-                data, addr = self.sock.recvfrom(self.CHUNK * 2)
-                self.output_stream.write(data)
-            except Exception as e:
-                print(f"Receive audio error: {e}")
-                break
-
-    def stop_client(self):
-        if not self.is_running:
-            return
-
-        self.is_running = False
-
-        if self.send_thread and self.send_thread.is_alive():
-            self.send_thread.join(timeout=1)
-        if self.recv_thread and self.recv_thread.is_alive():
-            self.recv_thread.join(timeout=1)
-
-        if self.sock:
-            self.sock.close()
-            self.sock = None
-
-        # Close audio streams
-        if self.input_stream:
-            if not self.input_stream.is_stopped():
-                self.input_stream.stop_stream()
-            self.input_stream.close()
-            self.input_stream = None
-
-        if self.output_stream:
-            if not self.output_stream.is_stopped():
-                self.output_stream.stop_stream()
-            self.output_stream.close()
-            self.output_stream = None
-
-        self.start_button.configure(state=tk.NORMAL)
-        self.stop_button.configure(state=tk.DISABLED)
-        print("Client stopped.")
 
     def on_closing(self):
-        if self.is_running:
-            self.stop_client()
-        self.p.terminate()
+        self.running = False
+        self.sock.close()
         self.master.destroy()
 
 def main():
     root = tk.Tk()
-    app = VoiceClient(root)
+    app = CombinedClientApp(root, server_ip="127.0.0.1", server_port=9999)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
 
 if __name__ == "__main__":

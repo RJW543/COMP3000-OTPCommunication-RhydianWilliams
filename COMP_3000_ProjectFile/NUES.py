@@ -1,123 +1,86 @@
+import tkinter as tk
 import socket
-import re
-import subprocess
 import threading
-import sys
 
-def run_loclx(local_port):
-    """
-    Run `loclx tunnel udp --port <local_port>` in the background.
-    Parse its output to display the forwarding info.
-    Returns the subprocess.Popen object for loclx and the
-    discovered domain:port (if found).
-    """
-    cmd = ["loclx", "tunnel", "udp", "--port", str(local_port)]
+class UDPServerApp:
+    def __init__(self, master, server_port=9999):
+        self.master = master
+        self.master.title("Server Side - LocalXpose Relay")
 
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True
-    )
-    
-    domain_port = None
-    
-    while True:
-        line = process.stdout.readline()
-        if not line:
-            break  
+        # GUI elements
+        self.info_label = tk.Label(master, text="LocalXpose UDP Relay Server")
+        self.info_label.pack(pady=5)
 
-        print("loclx:", line.strip())  
+        self.port_label = tk.Label(master, text=f"Listening on UDP port: {server_port}")
+        self.port_label.pack(pady=5)
 
-        if "Forwarding from " in line:
-            match = re.search(r"Forwarding from udp://([^:]+):(\d+)", line)
-            if match:
-                domain = match.group(1)
-                fwd_port = match.group(2)
-                domain_port = f"{domain}:{fwd_port}"
-                print(f"[SERVER] loclx tunnel active at {domain_port}")
-                break
+        self.client_addrs_label = tk.Label(master, text="Known Clients: None")
+        self.client_addrs_label.pack(pady=5)
 
-    return process, domain_port
+        self.last_message_label = tk.Label(master, text="Last Received Text: None")
+        self.last_message_label.pack(pady=5)
 
-class UdpForwarder:
-    """
-    A simple class that listens on a UDP port and forwards packets
-    between exactly two clients.
-    """
-    def __init__(self, local_port):
-        self.local_port = local_port
-        self.sock = None
+        # Maintain a dict of client_name -> (ip, port)
+        self.client_registry = {}
 
-        self.client_addresses = set() 
-
-        self.running = False
-        self.forward_thread = None
-
-    def start(self):
+        # Start UDP socket
+        self.server_port = server_port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(('', self.local_port))
+        self.sock.bind(("", self.server_port))
+
+        # Thread to handle incoming messages
         self.running = True
+        self.listener_thread = threading.Thread(target=self.listen_udp, daemon=True)
+        self.listener_thread.start()
 
-        self.forward_thread = threading.Thread(target=self.forward_loop)
-        self.forward_thread.start()
-
-        print(f"[SERVER] Forwarder listening on UDP port {self.local_port}.")
-
-    def forward_loop(self):
-        """
-        Loop that receives UDP data and forwards it to the *other* client.
-        """
+    def listen_udp(self):
         while self.running:
             try:
-                data, addr = self.sock.recvfrom(65535)  
-            except OSError:
+                data, addr = self.sock.recvfrom(4096)
+                text_received = data.decode("utf-8", errors="ignore").strip()
+
+                if text_received.startswith("REGISTER:"):
+                    name = text_received.split(":", 1)[1].strip()
+                    self.client_registry[name] = addr
+
+                    self.client_addrs_label.config(
+                        text="Known Clients: " + ", ".join(
+                            [f"{n}@{ip}:{port}" for n, (ip, port) in self.client_registry.items()]
+                        )
+                    )
+                    continue
+
+                if ":" not in text_received:
+                    continue  # ignore malformed
+
+                sender_name, message = text_received.split(":", 1)
+                sender_name = sender_name.strip()
+                message = message.strip()
+
+                # Update server GUI
+                self.last_message_label.config(
+                    text=f"From {sender_name}: {message}"
+                )
+
+                for name, client_addr in self.client_registry.items():
+                    if name == sender_name:
+                        continue  # don't send to self
+                    self.sock.sendto(text_received.encode("utf-8"), client_addr)
+
+            except Exception as e:
+                print(f"Server error: {e}")
                 break
 
-            if addr not in self.client_addresses:
-                self.client_addresses.add(addr)
-                print(f"[SERVER] New client: {addr}")
-
-            if len(self.client_addresses) == 2:
-                for c in self.client_addresses:
-                    if c != addr:
-                        self.sock.sendto(data, c)
-
-    def stop(self):
+    def on_closing(self):
         self.running = False
-        if self.sock:
-            self.sock.close()
-        if self.forward_thread and self.forward_thread.is_alive():
-            self.forward_thread.join()
+        self.sock.close()
+        self.master.destroy()
 
 def main():
-    local_port = 5100
-    if len(sys.argv) > 1:
-        local_port = int(sys.argv[1])
-
-    print(f"[SERVER] Starting loclx on UDP port {local_port}...")
-    loclx_process, domain_port = run_loclx(local_port)
-
-    if not domain_port:
-        print("[SERVER] Failed to parse loclx forwarding info. Exiting.")
-        if loclx_process:
-            loclx_process.terminate()
-        sys.exit(1)
-
-    forwarder = UdpForwarder(local_port)
-    forwarder.start()
-
-    print("[SERVER] Press Ctrl+C to stop, or close terminal.")
-
-    try:
-        while True:
-            pass
-    except KeyboardInterrupt:
-        print("\n[SERVER] Shutting down.")
-    finally:
-        forwarder.stop()
-        if loclx_process and loclx_process.poll() is None:
-            loclx_process.terminate()
+    root = tk.Tk()
+    app = UDPServerApp(root, server_port=9999)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    root.mainloop()
 
 if __name__ == "__main__":
     main()
