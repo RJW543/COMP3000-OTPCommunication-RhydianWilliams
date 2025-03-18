@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import socket
 import re
 import subprocess
@@ -14,7 +12,7 @@ def run_loclx(local_port):
     discovered domain:port (if found).
     """
     cmd = ["loclx", "tunnel", "udp", "--port", str(local_port)]
-    
+
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -27,11 +25,10 @@ def run_loclx(local_port):
     while True:
         line = process.stdout.readline()
         if not line:
-            break  # loclx exited or no more output
+            break  
 
-        print("loclx:", line.strip())  # Print loclx output to console
+        print("loclx:", line.strip())  
 
-        # Adjust this to match loclx's actual output format
         if "Forwarding from " in line:
             match = re.search(r"Forwarding from udp://([^:]+):(\d+)", line)
             if match:
@@ -62,7 +59,6 @@ class UdpForwarder:
         self.sock.bind(('', self.local_port))
         self.running = True
 
-        # Start thread that keeps reading and forwarding
         self.forward_thread = threading.Thread(target=self.forward_loop)
         self.forward_thread.start()
 
@@ -76,21 +72,16 @@ class UdpForwarder:
             try:
                 data, addr = self.sock.recvfrom(65535)  
             except OSError:
-                # Socket closed
                 break
 
-            # If it's a new client, add to the set
             if addr not in self.client_addresses:
                 self.client_addresses.add(addr)
                 print(f"[SERVER] New client: {addr}")
 
-            # If we have two clients, forward from one to the other
             if len(self.client_addresses) == 2:
-                # The other client is the one not equal to "addr"
                 for c in self.client_addresses:
                     if c != addr:
                         self.sock.sendto(data, c)
-            
 
     def stop(self):
         self.running = False
@@ -100,7 +91,6 @@ class UdpForwarder:
             self.forward_thread.join()
 
 def main():
-    # The local UDP port that we will forward
     local_port = 5100
     if len(sys.argv) > 1:
         local_port = int(sys.argv[1])
@@ -114,20 +104,17 @@ def main():
             loclx_process.terminate()
         sys.exit(1)
 
-    # Now start the forwarder
     forwarder = UdpForwarder(local_port)
     forwarder.start()
 
     print("[SERVER] Press Ctrl+C to stop, or close terminal.")
 
     try:
-        # Wait here until user interrupts
         while True:
             pass
     except KeyboardInterrupt:
         print("\n[SERVER] Shutting down.")
     finally:
-        # Clean up
         forwarder.stop()
         if loclx_process and loclx_process.poll() is None:
             loclx_process.terminate()
