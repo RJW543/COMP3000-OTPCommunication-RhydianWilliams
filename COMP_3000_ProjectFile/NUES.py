@@ -101,7 +101,7 @@ class UdpForwarder:
 
 def main():
     # The local UDP port that we will forward
-    local_port = 5001
+    local_port = 5100
     if len(sys.argv) > 1:
         local_port = int(sys.argv[1])
 
