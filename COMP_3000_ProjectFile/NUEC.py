@@ -259,64 +259,65 @@ class OTPClient:
             messagebox.showerror("Error", "No available OTP pages to use.")
 
     def receive_messages(self):
-        self.client_socket.settimeout(1.0)  # So we can periodically check for stop_receiving
+        self.client_socket.settimeout(1.0)  # Allow periodic check for stop_receiving
         while not self.stop_receiving:
             try:
                 data, _ = self.client_socket.recvfrom(4096)
                 if not data:
                     continue
-
+                # Decode and log the raw message
                 message = data.decode("utf-8", errors="ignore")
+                print("Raw received:", message)  # Debug print
+
+                # For debugging, display the raw message in the chat area:
+                self.master.after(0, lambda m=message: self.update_chat_area("DEBUG: " + m))
                 
                 if message.startswith("MSG|"):
                     try:
                         parts = message.split("|", maxsplit=2)
                         if len(parts) < 3:
+                            self.master.after(0, lambda: self.update_chat_area("Received MSG with insufficient parts."))
                             continue
-
                         sender_id = parts[1]
                         payload = parts[2]  # Expected format: otpIdentifier:encryptedMessage
                         if ":" in payload:
-                            otp_identifier, actual_encrypted_message = payload.split(":", maxsplit=1)
-
-                            # Find the matching OTP content
+                            otp_identifier, encrypted_part = payload.split(":", maxsplit=1)
+                            # Find the OTP content matching this identifier
                             otp_content = None
                             for identifier, content in self.otp_pages:
                                 if identifier == otp_identifier:
                                     otp_content = content
                                     break
-
                             if otp_content:
-                                decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
+                                decrypted_message = decrypt_message(encrypted_part, otp_content)
                                 display_message = f"Received from {sender_id} (Decrypted): {decrypted_message}"
                             else:
-                                display_message = f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}"
+                                display_message = f"Received from {sender_id} (Unknown OTP): {encrypted_part}"
                         else:
-                            # If no colon is found, just display the raw payload.
                             display_message = f"Received from {sender_id}: {payload}"
-
-                        # Schedule GUI update on the main thread:
-                        self.master.after(0, lambda msg=display_message: self.update_chat_area(msg))
+                        
+                        # Update the GUI on the main thread
+                        self.master.after(0, lambda m=display_message: self.update_chat_area(m))
                     except Exception as e:
-                        self.master.after(0, lambda: self.update_chat_area("Received improperly formatted MSG."))
+                        error_text = "Received improperly formatted MSG: " + str(e)
+                        self.master.after(0, lambda: self.update_chat_area(error_text))
                 elif message.startswith("ERROR:"):
-                    self.master.after(0, lambda: self.update_chat_area(f"Server Error: {message}"))
+                    self.master.after(0, lambda: self.update_chat_area("Server Error: " + message))
                 else:
-                    # Optionally handle unexpected message formats
-                    pass
-
+                    # Optionally handle other message formats
+                    self.master.after(0, lambda: self.update_chat_area("Unknown message format: " + message))
             except socket.timeout:
                 continue
             except Exception as e:
-                print(f"Error receiving: {e}")
+                print("Exception in receive_messages:", e)
                 break
 
-        # If loop exits, close socket and warn the user
         if self.client_socket:
             self.client_socket.close()
             self.client_socket = None
         self.master.after(0, lambda: messagebox.showwarning("Warning", "Disconnected from server."))
         self.master.after(0, self.master.quit)
+
 
 
     def update_chat_area(self, msg):
