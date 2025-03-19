@@ -1,150 +1,337 @@
 import tkinter as tk
+from tkinter import messagebox, scrolledtext
 import socket
 import threading
-import speech_recognition as sr
-import pyttsx3
+import sys
+import fcntl
+from pathlib import Path
 
-class CombinedClientApp:
+# --- OTP Related Functions ---
+
+def load_otp_pages(file_name="otp_cipher.txt"):
+    otp_pages = []
+    file_path = Path(file_name)
+    if not file_path.exists():
+        return otp_pages
+    with file_path.open("r") as file:
+        for line in file:
+            if len(line) < 8:
+                continue  # Skip invalid lines
+            identifier = line[:8]
+            content = line[8:].strip()
+            otp_pages.append((identifier, content))
+    return otp_pages
+
+def load_used_pages(file_name="used_pages.txt"):
+    file_path = Path(file_name)
+    if not file_path.exists():
+        return set()
+    with file_path.open("r") as file:
+        return {line.strip() for line in file}
+
+def save_used_page(identifier, file_name="used_pages.txt"):
+    with open(file_name, "a") as file:
+        file.write(f"{identifier}\n")
+
+def get_next_otp_page_linux(otp_pages, used_identifiers, lock_file="used_pages.lock"):
+    """Find the next unused OTP page based on identifiers with a locking mechanism on Linux."""
+    with open(lock_file, "w") as lock:
+        # Acquire an exclusive lock
+        fcntl.flock(lock, fcntl.LOCK_EX)
+
+        for identifier, content in otp_pages:
+            if identifier not in used_identifiers:
+                # Mark it as used immediately
+                save_used_page(identifier)
+                used_identifiers.add(identifier)
+                # Release the lock before returning
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                return identifier, content
+
+        # Release the lock if no match found
+        fcntl.flock(lock, fcntl.LOCK_UN)
+    return None, None
+
+def encrypt_message(message, otp_content):
+    encrypted_message = []
+    for i, char in enumerate(message):
+        if i >= len(otp_content):
+            break
+        encrypted_char = chr(ord(char) ^ ord(otp_content[i]))
+        encrypted_message.append(encrypted_char)
+    return ''.join(encrypted_message)
+
+def decrypt_message(encrypted_message, otp_content):
+    decrypted_message = []
+    for i, char in enumerate(encrypted_message):
+        if i >= len(otp_content):
+            break
+        decrypted_char = chr(ord(char) ^ ord(otp_content[i]))
+        decrypted_message.append(decrypted_char)
+    return ''.join(decrypted_message)
+
+
+# --- Client Class ---
+
+class OTPClient:
     def __init__(self, master):
         self.master = master
-        self.master.title("Combined Client - Two-Way Audio Chat")
+        self.master.title("OTP Messaging Client (UDP)")
 
-        # Variables
-        self.server_host = None
-        self.server_port = None
-        self.client_name = None
-        self.running = True
+        # Initialise OTP
+        self.otp_pages = load_otp_pages()
+        self.used_identifiers = load_used_pages()
 
-        # TTS engine
-        self.tts_engine = pyttsx3.init()
+        # Frame for LocalXpose public address input
+        self.addr_frame = tk.Frame(master)
+        self.addr_frame.pack(padx=10, pady=5)
 
-        # Create UI
-        self.create_widgets()
+        self.host_label = tk.Label(self.addr_frame, text="Host:")
+        self.host_label.pack(side=tk.LEFT, padx=(0, 5))
 
-        # UDP Socket
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(("", 0))  # bind to any free local port
+        self.host_entry = tk.Entry(self.addr_frame, width=25)
+        self.host_entry.pack(side=tk.LEFT, padx=(0, 10))
+        self.host_entry.insert(0, "xyz.loclx.io")  # Example placeholder
 
-        # Start listening thread
-        self.listener_thread = threading.Thread(target=self.listen_for_messages, daemon=True)
-        self.listener_thread.start()
+        self.port_label = tk.Label(self.addr_frame, text="Port:")
+        self.port_label.pack(side=tk.LEFT, padx=(0, 5))
 
-    def create_widgets(self):
-        # Server info
-        self.server_host_label = tk.Label(self.master, text="Server Host (LocalXpose domain/IP):")
-        self.server_host_label.pack(pady=2)
-        self.server_host_entry = tk.Entry(self.master)
-        self.server_host_entry.insert(0, "127.0.0.1")  # example
-        self.server_host_entry.pack(pady=2)
+        self.port_entry = tk.Entry(self.addr_frame, width=10)
+        self.port_entry.pack(side=tk.LEFT, padx=(0, 10))
+        self.port_entry.insert(0, "12345")  # Example placeholder
 
-        self.server_port_label = tk.Label(self.master, text="Server Port:")
-        self.server_port_label.pack(pady=2)
-        self.server_port_entry = tk.Entry(self.master)
-        self.server_port_entry.insert(0, "9999")  # example
-        self.server_port_entry.pack(pady=2)
+        self.set_server_button = tk.Button(self.addr_frame, text="Set Server", command=self.set_server_address)
+        self.set_server_button.pack(side=tk.LEFT)
 
-        # Name
-        self.name_label = tk.Label(self.master, text="Your Name (unique):")
-        self.name_label.pack(pady=2)
-        self.name_entry = tk.Entry(self.master)
-        self.name_entry.pack(pady=2)
+        # Frame for user ID
+        self.user_id_frame = tk.Frame(master)
 
-        # Registration
-        self.register_button = tk.Button(self.master, text="Register", command=self.register)
-        self.register_button.pack(pady=5)
+        self.user_id_label = tk.Label(self.user_id_frame, text="Enter your userID:")
+        self.user_id_label.pack(side=tk.LEFT)
 
-        # Record & Send
-        self.record_button = tk.Button(self.master, text="Record & Send", command=self.record_and_send, state="disabled")
-        self.record_button.pack(pady=10)
+        self.user_id_entry = tk.Entry(self.user_id_frame, width=30)
+        self.user_id_entry.pack(side=tk.LEFT)
 
-        # Status / Info
-        self.status_label = tk.Label(self.master, text="Status: Not Registered")
-        self.status_label.pack(pady=5)
+        self.connect_button = tk.Button(self.user_id_frame, text="Connect", command=self.connect_to_server)
+        self.connect_button.pack(side=tk.LEFT)
 
-        self.last_received_label = tk.Label(self.master, text="Last Received: None")
-        self.last_received_label.pack(pady=5)
+        # Message frame setup (hidden initially)
+        self.message_frame = tk.Frame(master)
 
-    def register(self):
-        self.server_host = self.server_host_entry.get().strip()
-        self.server_port = self.server_port_entry.get().strip()
-        self.client_name = self.name_entry.get().strip()
+        self.user_id_display = tk.Label(self.message_frame, text="")
+        self.user_id_display.pack(pady=5)
 
-        if not self.server_host or not self.server_port.isdigit() or not self.client_name:
-            self.status_label.config(text="Please fill in all fields correctly.")
+        self.chat_area = scrolledtext.ScrolledText(self.message_frame, height=15, width=50)
+        self.chat_area.pack(pady=5)
+        self.chat_area.config(state=tk.DISABLED)
+
+        # Label + Entry for Recipient userID
+        self.recipient_label = tk.Label(self.message_frame, text="Recipient userID:")
+        self.recipient_label.pack()
+        self.recipient_input = tk.Entry(self.message_frame, width=50)
+        self.recipient_input.pack(pady=5)
+
+        # Label + Entry for the message text
+        self.message_label = tk.Label(self.message_frame, text="Message to send:")
+        self.message_label.pack()
+        self.text_input = tk.Entry(self.message_frame, width=50)
+        self.text_input.pack(pady=5)
+
+        self.send_button = tk.Button(self.message_frame, text="Send", command=self.send_message)
+        self.send_button.pack()
+
+        self.client_socket = None
+
+        # Server address variables
+        self.SERVER_HOST = None
+        self.SERVER_PORT = None
+        self.user_id = None
+
+        # Threading control
+        self.stop_receiving = False
+        self.receive_thread = None
+
+    def set_server_address(self):
+        host = self.host_entry.get().strip()
+        port = self.port_entry.get().strip()
+        if not host or not port:
+            messagebox.showwarning("Warning", "Please enter both host and port.")
+            return
+        if not port.isdigit():
+            messagebox.showwarning("Warning", "Port must be a number.")
             return
 
-        self.server_port = int(self.server_port)
+        self.SERVER_HOST = host
+        self.SERVER_PORT = int(port)
+        messagebox.showinfo("Info", f"Server address set to {self.SERVER_HOST}:{self.SERVER_PORT}")
 
-        # Send registration
-        reg_msg = f"REGISTER: {self.client_name}"
+        # Enable the user ID frame
+        self.user_id_frame.pack(padx=10, pady=10)
+        # Disable these fields
+        self.host_entry.config(state=tk.DISABLED)
+        self.port_entry.config(state=tk.DISABLED)
+        self.set_server_button.config(state=tk.DISABLED)
+
+    def connect_to_server(self):
+        if self.SERVER_HOST is None or self.SERVER_PORT is None:
+            messagebox.showwarning("Warning", "Please set the server address first.")
+            return
+
+        self.user_id = self.user_id_entry.get().strip()
+        if not self.user_id:
+            messagebox.showwarning("Warning", "Please enter a userID.")
+            return
+
         try:
-            self.sock.sendto(reg_msg.encode("utf-8"), (self.server_host, self.server_port))
-            self.status_label.config(text=f"Registered as {self.client_name}.")
-            self.record_button.config(state="normal")
+            # Create a UDP socket
+            self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.client_socket.settimeout(5.0)  # For handshake wait
+
+            # Send handshake: CONNECT|userID
+            handshake_msg = f"CONNECT|{self.user_id}"
+            self.client_socket.sendto(handshake_msg.encode("utf-8"), (self.SERVER_HOST, self.SERVER_PORT))
+
+            # Wait for response
+            data, _ = self.client_socket.recvfrom(1024)
+            response = data.decode("utf-8", errors="ignore")
+            if response == "CONNECTED":
+                messagebox.showinfo("Info", "Connected to the server via UDP.")
+                self.user_id_frame.pack_forget()
+                self.message_frame.pack(padx=10, pady=10)
+                self.user_id_display.config(text=f"Your userID: {self.user_id}")
+
+                # Start a background thread to receive incoming messages
+                self.stop_receiving = False
+                self.receive_thread = threading.Thread(target=self.receive_messages, daemon=True)
+                self.receive_thread.start()
+            elif response.startswith("ERROR:"):
+                messagebox.showerror("Error", response)
+                self.client_socket.close()
+                self.client_socket = None
+            else:
+                messagebox.showerror("Error", f"Unexpected response: {response}")
+                self.client_socket.close()
+                self.client_socket = None
+        except socket.timeout:
+            messagebox.showerror("Error", "No response from server. Check LocalXpose address or server status.")
+            if self.client_socket:
+                self.client_socket.close()
+                self.client_socket = None
         except Exception as e:
-            self.status_label.config(text=f"Registration failed: {e}")
+            messagebox.showerror("Error", f"Failed to connect: {e}")
+            if self.client_socket:
+                self.client_socket.close()
+                self.client_socket = None
 
-    def record_and_send(self):
-        if not self.client_name:
-            self.status_label.config(text="Not registered.")
+    def get_next_available_otp(self):
+        return get_next_otp_page_linux(self.otp_pages, self.used_identifiers)
+
+    def send_message(self):
+        if not self.client_socket:
+            messagebox.showwarning("Warning", "You are not connected to the server.")
             return
 
-        self.status_label.config(text="Recording...")
-        self.master.update_idletasks()
+        recipient_id = self.recipient_input.get().strip()
+        message = self.text_input.get()
 
-        r = sr.Recognizer()
-        with sr.Microphone() as source:
-            r.adjust_for_ambient_noise(source, duration=1)
-            audio_data = r.listen(source)
+        if not recipient_id:
+            messagebox.showwarning("Warning", "Please enter a valid recipient userID.")
+            return
+        if not message:
+            messagebox.showwarning("Warning", "Please enter a message.")
+            return
+        if recipient_id == self.user_id:
+            messagebox.showwarning("Warning", "You cannot send a message to yourself.")
+            return
 
-        self.status_label.config(text="Converting to text...")
-        self.master.update_idletasks()
+        otp_identifier, otp_content = self.get_next_available_otp()
+        if otp_identifier and otp_content:
+            encrypted_message = encrypt_message(message, otp_content)
+            full_message = f"SEND|{recipient_id}|{otp_identifier}:{encrypted_message}"
 
-        try:
-            recognized_text = r.recognize_google(audio_data)
-            self.status_label.config(text=f"Sending: {recognized_text}")
-
-            msg = f"{self.client_name}: {recognized_text}"
-            self.sock.sendto(msg.encode("utf-8"), (self.server_host, self.server_port))
-
-            self.status_label.config(text="Sent!")
-        except sr.UnknownValueError:
-            self.status_label.config(text="Could not understand audio.")
-        except sr.RequestError as e:
-            self.status_label.config(text=f"API error: {e}")
-
-    def listen_for_messages(self):
-        while self.running:
             try:
-                data, addr = self.sock.recvfrom(4096)
-                text_received = data.decode("utf-8", errors="ignore").strip()
-                if ":" not in text_received:
-                    continue
-                sender_name, message = text_received.split(":", 1)
-                sender_name = sender_name.strip()
-                message = message.strip()
-
-                self.last_received_label.config(text=f"Last Received from {sender_name}: {message}")
-                self.status_label.config(text="Speaking...")
-
-                self.tts_engine.say(message)
-                self.tts_engine.runAndWait()
-
-                self.status_label.config(text="Idle")
+                self.client_socket.sendto(full_message.encode("utf-8"), (self.SERVER_HOST, self.SERVER_PORT))
+                self.text_input.delete(0, tk.END)
+                self.update_chat_area(f"Me (Encrypted to {recipient_id}): {encrypted_message}")
             except Exception as e:
-                print(f"Error receiving data: {e}")
+                messagebox.showerror("Error", f"Failed to send message: {e}")
+        else:
+            messagebox.showerror("Error", "No available OTP pages to use.")
+
+    def receive_messages(self):
+        # Keep listening for incoming datagrams
+        self.client_socket.settimeout(1.0)  # So we can periodically check stop_receiving
+        while not self.stop_receiving:
+            try:
+                data, _ = self.client_socket.recvfrom(4096)
+                if not data:
+                    continue
+
+                message = data.decode("utf-8", errors="ignore")
+
+                # We expect: MSG|senderID|otpID:encryptedMessage
+                if message.startswith("MSG|"):
+                    try:
+                        parts = message.split("|", maxsplit=2)
+                        if len(parts) < 3:
+                            continue
+
+                        sender_id = parts[1]
+                        payload = parts[2]  # "otpID:encrypted"
+                        otp_identifier, actual_encrypted_message = payload.split(":", maxsplit=1)
+
+                        # Find matching OTP
+                        otp_content = None
+                        for identifier, content in self.otp_pages:
+                            if identifier == otp_identifier:
+                                otp_content = content
+                                break
+
+                        if otp_content:
+                            decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
+                            self.update_chat_area(
+                                f"Received from {sender_id} (Decrypted): {decrypted_message}"
+                            )
+                            # Mark this page as used
+                            save_used_page(otp_identifier)
+                            self.used_identifiers.add(otp_identifier)
+                        else:
+                            # No matching OTP -> show raw
+                            self.update_chat_area(
+                                f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}"
+                            )
+                    except ValueError:
+                        # If there's an error splitting
+                        self.update_chat_area("Received improperly formatted MSG.")
+                elif message.startswith("ERROR:"):
+                    # Show or log the error
+                    self.update_chat_area(f"Server Error: {message}")
+                else:
+                    # Possibly ignore unknown messages
+                    pass
+
+            except socket.timeout:
+                # Just loop around
+                continue
+            except Exception as e:
+                print(f"Error receiving: {e}")
                 break
 
-    def on_closing(self):
-        self.running = False
-        self.sock.close()
-        self.master.destroy()
+        # If we exit loop, close socket
+        if self.client_socket:
+            self.client_socket.close()
+            self.client_socket = None
+        messagebox.showwarning("Warning", "Disconnected from server.")
+        self.master.quit()
 
-def main():
-    root = tk.Tk()
-    app = CombinedClientApp(root)
-    root.protocol("WM_DELETE_WINDOW", app.on_closing)
-    root.mainloop()
+    def update_chat_area(self, msg):
+        self.chat_area.config(state=tk.NORMAL)
+        self.chat_area.insert(tk.END, msg + "\n")
+        self.chat_area.config(state=tk.DISABLED)
+        self.chat_area.yview(tk.END)
+
 
 if __name__ == "__main__":
-    main()
+    root = tk.Tk()
+    client_app = OTPClient(root)
+    root.mainloop()

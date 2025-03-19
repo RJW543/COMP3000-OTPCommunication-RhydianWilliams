@@ -1,139 +1,190 @@
 import tkinter as tk
-import socket
+from tkinter import messagebox
 import threading
+import socket
+import sys
 
-class UDPServerApp:
-    def __init__(self, master):
-        self.master = master
-        self.master.title("Server Side - LocalXpose Relay")
+# Dictionary to map user_id -> (ip, port)
+clients = {}
 
-        # GUI elements
-        self.local_port_label = tk.Label(master, text="Local Listen Port:")
-        self.local_port_label.pack(pady=2)
-        self.local_port_entry = tk.Entry(master)
-        self.local_port_entry.insert(0, "9999")  # default
-        self.local_port_entry.pack(pady=2)
+def find_user_id_by_addr(addr):
+    """Return the user_id corresponding to a specific (ip, port) address, or None if not found."""
+    for uid, address in clients.items():
+        if address == addr:
+            return uid
+    return None
 
-        self.lx_host_label = tk.Label(master, text="LocalXpose Host (e.g. myapp.loclx.io):")
-        self.lx_host_label.pack(pady=2)
-        self.lx_host_entry = tk.Entry(master)
-        self.lx_host_entry.insert(0, "myapp.loclx.io")  # example, replace as needed
-        self.lx_host_entry.pack(pady=2)
-
-        self.lx_port_label = tk.Label(master, text="LocalXpose Port (e.g. 9999):")
-        self.lx_port_label.pack(pady=2)
-        self.lx_port_entry = tk.Entry(master)
-        self.lx_port_entry.insert(0, "9999")  # example
-        self.lx_port_entry.pack(pady=2)
-
-        self.start_button = tk.Button(master, text="Start Server", command=self.start_server)
-        self.start_button.pack(pady=5)
-
-        self.info_label = tk.Label(master, text="")
-        self.info_label.pack(pady=5)
-
-        self.client_addrs_label = tk.Label(master, text="Known Clients: None")
-        self.client_addrs_label.pack(pady=5)
-
-        self.last_message_label = tk.Label(master, text="Last Received Text: None")
-        self.last_message_label.pack(pady=5)
-
-        # Dictionary to track clients: { name: (ip, port) }
-        self.client_registry = {}
-
-        self.sock = None
+class UDPServerThread(threading.Thread):
+    def __init__(self, host, port, status_callback):
+        super().__init__(daemon=True)
+        self.host = host
+        self.port = port
+        self.status_callback = status_callback
         self.running = False
 
-    def start_server(self):
-        if self.sock is not None:
-            self.info_label.config(text="Server already started.")
-            return
-
-        # Get user input
-        local_port_str = self.local_port_entry.get().strip()
-        lx_host = self.lx_host_entry.get().strip()
-        lx_port_str = self.lx_port_entry.get().strip()
-
-        # Validate inputs
-        if not local_port_str.isdigit() or not lx_port_str.isdigit():
-            self.info_label.config(text="Please enter valid numeric ports.")
-            return
-
-        local_port = int(local_port_str)
-        lx_port = int(lx_port_str)
-
-        # Create and bind socket
-        try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.sock.bind(("", local_port))  # bind locally
-        except Exception as e:
-            self.info_label.config(text=f"Error binding server: {e}")
-            self.sock = None
-            return
-
-        self.info_label.config(
-            text=f"Server listening on local port {local_port}. "
-                 f"\nLocalXpose Domain: {lx_host}:{lx_port}\n"
-                 f"(Give this domain/port to clients.)"
-        )
-
-        self.running = True
-        self.listener_thread = threading.Thread(target=self.listen_udp, daemon=True)
-        self.listener_thread.start()
-
-    def listen_udp(self):
-        while self.running:
+    def run(self):
+        # Create a UDP socket
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server_socket:
             try:
-                data, addr = self.sock.recvfrom(4096)
-                text_received = data.decode("utf-8", errors="ignore").strip()
+                server_socket.bind((self.host, self.port))
+            except Exception as e:
+                self.status_callback(f"Error binding server to {self.host}:{self.port} - {e}", error=True)
+                return
 
-                # Check if this is a registration packet: "REGISTER: SomeName"
-                if text_received.startswith("REGISTER:"):
-                    name = text_received.split(":", 1)[1].strip()
-                    self.client_registry[name] = addr
+            self.running = True
+            self.status_callback(f"Server listening on UDP {self.host}:{self.port}")
 
-                    # Update our label with known clients
-                    self.client_addrs_label.config(
-                        text="Known Clients:\n" +
-                        "\n".join([
-                            f"{n} @ {ip}:{port}"
-                            for n, (ip, port) in self.client_registry.items()
-                        ])
-                    )
+            while self.running:
+                try:
+                    data, addr = server_socket.recvfrom(4096)
+                except OSError:
+                    # Socket likely closed
+                    break
+
+                if not data:
                     continue
 
-                if ":" not in text_received:
-                    continue  # ignore malformed
+                message = data.decode("utf-8", errors="ignore").strip()
 
-                sender_name, message = text_received.split(":", 1)
-                sender_name = sender_name.strip()
-                message = message.strip()
 
-                # Update server GUI
-                self.last_message_label.config(
-                    text=f"From {sender_name}: {message}"
-                )
+                if message.startswith("CONNECT|"):
+                    # Extract user_id from the message
+                    parts = message.split("|", maxsplit=1)
+                    if len(parts) < 2:
+                        continue
 
-                # Forward the text to every other registered client
-                for name, client_addr in self.client_registry.items():
-                    if name == sender_name:
-                        continue  # skip self
-                    self.sock.sendto(data, client_addr)
+                    user_id = parts[1].strip()
+                    if not user_id:
+                        # Invalid userID
+                        server_socket.sendto("ERROR:Invalid userID".encode("utf-8"), addr)
+                        continue
 
-            except Exception as e:
-                print(f"Server error: {e}")
-                break
+                    if user_id in clients:
+                        # Already taken
+                        server_socket.sendto("ERROR:UserID taken".encode("utf-8"), addr)
+                        print(f"Rejected '{addr}': UserID '{user_id}' already taken.")
+                        continue
 
-    def on_closing(self):
+                    # Register this user
+                    clients[user_id] = addr
+                    server_socket.sendto("CONNECTED".encode("utf-8"), addr)
+                    print(f"User '{user_id}' connected from {addr}")
+
+                elif message.startswith("SEND|"):
+                    # Format: SEND|recipient_id|<otpIdentifier:encryptedMessage>
+                    parts = message.split("|", maxsplit=2)
+                    if len(parts) < 3:
+                        continue
+
+                    recipient_id = parts[1]
+                    content = parts[2]  # "otpIdentifier:encryptedMessage" combined
+
+                    # Identify the sender from 'addr'
+                    sender_id = find_user_id_by_addr(addr)
+                    if not sender_id:
+                        # Not recognized => ignore or send error
+                        error_msg = "ERROR:Sender not recognized. Send CONNECT first."
+                        server_socket.sendto(error_msg.encode("utf-8"), addr)
+                        continue
+
+                    print(f"Received from '{sender_id}' -> '{recipient_id}': {content}")
+
+                    if recipient_id in clients:
+                        # Forward to recipient
+                        recipient_addr = clients[recipient_id]
+                        # Server sends: MSG|sender_id|otpIdentifier:encryptedMessage
+                        forward_msg = f"MSG|{sender_id}|{content}"
+                        try:
+                            server_socket.sendto(forward_msg.encode("utf-8"), recipient_addr)
+                            print(f"Forwarded to '{recipient_id}' @ {recipient_addr}")
+                        except Exception as e:
+                            print(f"Failed to send to '{recipient_id}': {e}")
+                            # Possibly remove them
+                            del clients[recipient_id]
+                    else:
+                        # Notify sender that recipient doesn't exist
+                        error_msg = f"ERROR:Recipient '{recipient_id}' not found."
+                        server_socket.sendto(error_msg.encode("utf-8"), addr)
+                        print(error_msg)
+
+                else:
+                    # Unknown message => ignore or handle
+                    pass
+
+    def stop(self):
         self.running = False
-        if self.sock:
-            self.sock.close()
-        self.master.destroy()
+        # Create a dummy datagram to unblock the recvfrom()
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as temp_sock:
+            temp_sock.sendto(b'', (self.host, self.port))
+
+
+class ServerGUI:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("UDP Server GUI")
+
+        self.HOST = "0.0.0.0"
+        self.PORT = 65432
+
+        self.server_thread = None
+
+        # Status label
+        self.status_label = tk.Label(master, text="Server is NOT running.", fg="red", font=("Arial", 12))
+        self.status_label.pack(pady=5)
+
+        # Start Button
+        self.start_button = tk.Button(master, text="Start Server", command=self.start_server, width=15)
+        self.start_button.pack(pady=5)
+
+        # Label to display the public address info (filled in manually if needed)
+        self.addr_info_label = tk.Label(master, text="", fg="blue", font=("Arial", 10))
+        self.addr_info_label.pack(pady=5)
+
+        # Stop Button
+        self.stop_button = tk.Button(master, text="Stop Server", command=self.stop_server, width=15, state=tk.DISABLED)
+        self.stop_button.pack(pady=5)
+
+    def update_status(self, message, error=False):
+        """Helper to update status text in the GUI."""
+        self.status_label.config(text=message, fg=("red" if error else "green"))
+
+    def start_server(self):
+        """Start the UDP server thread."""
+        try:
+            # Clear old clients on start
+            clients.clear()
+
+            # Start our custom server thread
+            self.server_thread = UDPServerThread(self.HOST, self.PORT, self.update_status)
+            self.server_thread.start()
+
+            # Update status
+            self.update_status("Server is RUNNING.")
+            self.start_button.config(state=tk.DISABLED)
+            self.stop_button.config(state=tk.NORMAL)
+
+            self.addr_info_label.config(
+                text="Run localxpose externally, e.g.\n loclx serve udp --port 65432\nThen share the provided public address."
+            )
+
+        except Exception as e:
+            messagebox.showerror("Error starting server", str(e))
+
+    def stop_server(self):
+        """Stops the server."""
+        if self.server_thread:
+            self.server_thread.stop()
+            self.server_thread = None
+
+        # Update status
+        self.update_status("Server is NOT running.", error=True)
+        self.start_button.config(state=tk.NORMAL)
+        self.stop_button.config(state=tk.DISABLED)
+        self.addr_info_label.config(text="")
 
 def main():
     root = tk.Tk()
-    app = UDPServerApp(root)
-    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    gui = ServerGUI(root)
     root.mainloop()
 
 if __name__ == "__main__":
