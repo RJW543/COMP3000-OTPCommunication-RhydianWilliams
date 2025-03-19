@@ -1,3 +1,7 @@
+import os
+# Suppress ALSA warnings by setting this environment variable before importing PyAudio
+os.environ["ALSA_LOG_NOCONFIG"] = "1"
+
 import tkinter as tk
 from tkinter import ttk
 import speech_recognition as sr
@@ -25,13 +29,13 @@ def start_recording():
     global stop_listening, recognized_text, mic
     # Clear any previous text
     recognized_text = ""
-    # Retrieve the selected input device index (assumes dropdown items formatted as "index - name")
+    # Retrieve the selected input device index (expects dropdown items formatted as "index - name")
     selected_input = input_device_var.get().split(" - ")[0]
     try:
         device_index = int(selected_input)
     except ValueError:
         device_index = None
-    # Create a Microphone instance with the chosen device
+    # Create a Microphone instance with the chosen device index
     mic = sr.Microphone(device_index=device_index)
     # Adjust for ambient noise (optional, but can help recognition)
     with mic as source:
@@ -67,6 +71,7 @@ def periodic_update():
     # Schedule the next update after 1 second (1000 ms)
     root.after(1000, periodic_update)
 
+# --------------------- Setup Tkinter GUI ---------------------
 root = tk.Tk()
 root.title("Voice Recorder & Speech Recognizer")
 
@@ -76,13 +81,21 @@ config_frame.pack(fill=tk.X)
 
 # Input Device Selection
 input_device_var = tk.StringVar(root)
-# Get available microphone names (each item is formatted with its index)
 mic_names = sr.Microphone.list_microphone_names()
 input_options = [f"{i} - {name}" for i, name in enumerate(mic_names)]
-input_device_var.set(input_options[0])
+
+# Set default to the option with index 2 if available (matching your Jabra device)
+default_option = None
+for option in input_options:
+    if option.startswith("2 -"):
+        default_option = option
+        break
+if default_option is None:
+    default_option = input_options[0]
+input_device_var.set(default_option)
 
 ttk.Label(config_frame, text="Input Device:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-input_menu = ttk.OptionMenu(config_frame, input_device_var, input_options[0], *input_options)
+input_menu = ttk.OptionMenu(config_frame, input_device_var, default_option, *input_options)
 input_menu.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
 
 # Output Mode Selection
