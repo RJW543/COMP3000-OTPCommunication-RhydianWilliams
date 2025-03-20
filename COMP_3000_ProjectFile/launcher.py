@@ -18,9 +18,6 @@ class MainMenuApp:
         btn_run_client = tk.Button(master, text="Run Text Client", width=20, command=self.launch_client_gui)
         btn_run_client.pack(pady=5)
 
-        btn_run_voice_client = tk.Button(master, text="Run Voice Client (Disabled)", width=20, command=self.launch_voice_client_gui)
-        btn_run_voice_client.pack(pady=5)
-
         btn_generate_otp = tk.Button(master, text="Generate a new OTP", width=20, command=self.launch_gen_gui)
         btn_generate_otp.pack(pady=5)
 
@@ -41,11 +38,6 @@ class MainMenuApp:
             subprocess.Popen([sys.executable, "TextAC.py"])
         except FileNotFoundError:
             messagebox.showerror("Error", "Could not find or launch TextAC.py")
-
-    def launch_voice_client_gui(self):
-        """
-        Launch voice client GUI.
-        """
 
     def launch_gen_gui(self):
         """
