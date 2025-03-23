@@ -47,7 +47,6 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
         except Exception as e:
             print(f"Error handling client {self.client_address}: {e}")
         finally:
-            # Clean up on disconnect
             if user_id and user_id in clients:
                 del clients[user_id]
                 print(f"User '{user_id}' disconnected.")
@@ -123,7 +122,6 @@ class ServerGUI:
 
             # 3) Define the server thread
             def run_server():
-                # Create the server instance
                 self.server = ThreadedTCPServer((self.HOST, self.PORT), ThreadedTCPRequestHandler)
                 with self.server:
                     ip, port = self.server.server_address

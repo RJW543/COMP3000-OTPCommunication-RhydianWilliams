@@ -1,6 +1,5 @@
 import speech_recognition as sr
 
-# Global variable to store the recognized text
 recognized_text = ""
 
 def callback(recognizer, audio):
@@ -21,7 +20,7 @@ def record_and_transcribe(output_file="transcription.txt"):
     # Use the default microphone as the audio source.
     mic = sr.Microphone()
     
-    # Adjust for ambient noise.
+    # Adjustment code for the ambient noise.
     with mic as source:
         print("Adjusting for ambient noise, please wait...")
         r.adjust_for_ambient_noise(source)

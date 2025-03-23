@@ -7,7 +7,7 @@ import fcntl
 import speech_recognition as sr
 import pyttsx3
 
-# --- OTP Related Functions ---
+# OTP Functions 
 
 def load_otp_pages(file_name="otp_cipher.txt"):
     otp_pages = []
@@ -17,7 +17,7 @@ def load_otp_pages(file_name="otp_cipher.txt"):
     with file_path.open("r") as file:
         for line in file:
             if len(line) < 8:
-                continue  # Skip invalid lines
+                continue  
             identifier = line[:8]
             content = line[8:].strip()
             otp_pages.append((identifier, content))
@@ -66,7 +66,7 @@ def decrypt_message(encrypted_message, otp_content):
     return ''.join(decrypted_message)
 
 
-# --- Client Class ---
+# Client Class
 
 class OTPClient:
     def __init__(self, master):
@@ -116,7 +116,6 @@ class OTPClient:
         self.chat_area.pack(pady=5)
         self.chat_area.config(state=tk.DISABLED)
 
-        # Label + Entry for Recipient userID
         self.recipient_label = tk.Label(self.message_frame, text="Recipient userID:")
         self.recipient_label.pack()
         self.recipient_input = tk.Entry(self.message_frame, width=50)
@@ -265,8 +264,6 @@ class OTPClient:
         self.chat_area.config(state=tk.DISABLED)
         self.chat_area.yview(tk.END)
 
-    # --- New Functions for Voice Messaging ---
-
     def record_voice_message(self):
         r = sr.Recognizer()
         mic = sr.Microphone()
@@ -293,7 +290,6 @@ class OTPClient:
     def send_voice_message(self):
         transcription = self.record_voice_message()
         if transcription:
-            # Optionally display the transcribed text in the text input before sending
             self.text_input.delete(0, tk.END)
             self.text_input.insert(0, transcription)
             self.send_message()

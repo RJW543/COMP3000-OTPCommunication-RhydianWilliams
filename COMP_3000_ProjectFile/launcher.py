@@ -12,10 +12,10 @@ class MainMenuApp:
         tk.Label(master, text="Please choose an action:", font=("Arial", 14)).pack(pady=10)
 
         # Buttons
-        btn_host_server = tk.Button(master, text="Host a Server", width=20, command=self.launch_server_gui)
+        btn_host_server = tk.Button(master, text="Host Server", width=20, command=self.launch_server_gui)
         btn_host_server.pack(pady=5)
 
-        btn_run_client = tk.Button(master, text="Run Text Client", width=20, command=self.launch_client_gui)
+        btn_run_client = tk.Button(master, text="Run Client", width=20, command=self.launch_client_gui)
         btn_run_client.pack(pady=5)
 
         btn_generate_otp = tk.Button(master, text="Generate a new OTP", width=20, command=self.launch_gen_gui)
@@ -32,12 +32,12 @@ class MainMenuApp:
 
     def launch_client_gui(self):
         """
-        Launch TextAC.py (the client GUI).
+        Launch VoiceAC.py (the client GUI).
         """
         try:
-            subprocess.Popen([sys.executable, "TextAC.py"])
+            subprocess.Popen([sys.executable, "VoiceAC.py"])
         except FileNotFoundError:
-            messagebox.showerror("Error", "Could not find or launch TextAC.py")
+            messagebox.showerror("Error", "Could not find or launch VoiceAC.py")
 
     def launch_gen_gui(self):
         """
