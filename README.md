@@ -37,10 +37,11 @@ Ensure you have **Python 3.8 or higher** installed.
 
 ```bash
 git clone https://github.com/RJW543/COMP3000-OTPCommunication-RhydianWilliams.git
-
+```
 #### 2. Install Dependencies
-
-
+```bash
+pip install tkinter pyngrok SpeechRecognition pyttsx3 pyaudio
+```
 
 
 
