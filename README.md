@@ -90,3 +90,8 @@ python3 launcher.py
 | TextASG.py  | Handles server-side encrypted text-based communication  | 
 | VoiceAC.py | Manages encrypted voice and text communication  | 
 | GenGUI.py  | Generates new One-Time Pads (OTPs)  | 
+
+---
+
+###🔒 Security and Ethical Notice
+This system is intended solely for ethical and legal purposes. Users must adhere to applicable laws and ethical standards concerning data privacy and encryption.
