@@ -86,7 +86,7 @@ python3 launcher.py
 ### 📂 Included Applications
 | File | Description | 
 |----------|----------|
-| launcher.py | Centralized launcher GUI  | 
+| launcher.py | Centralised launcher GUI  | 
 | TextASG.py  | Handles server-side encrypted text-based communication  | 
 | VoiceAC.py | Manages encrypted voice and text communication  | 
 | GenGUI.py  | Generates new One-Time Pads (OTPs)  | 
