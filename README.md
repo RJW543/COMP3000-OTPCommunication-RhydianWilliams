@@ -49,6 +49,7 @@ pip install tkinter pyngrok SpeechRecognition pyttsx3 pyaudio
 - SpeechRecognition: Voice transcription capabilities
 - pyttsx3: Text-to-speech conversion
 - pyaudio: Microphone input handling (used by SpeechRecognition)
+Note: If you face issues installing pyaudio, check the [PyAudio Installation Guide.](https://people.csail.mit.edu/hubert/pyaudio/#downloads)
 
 
 
