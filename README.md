@@ -61,7 +61,7 @@ Securely forward traffic by configuring your pyngrok authentication token:
 
 1. Sign up at Ngrok.
 3. Obtain your authtoken from your Ngrok dashboard.
-3.Configure your token by running:
+3. Configure your token by running:
 
 ```bash
 ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
@@ -79,6 +79,14 @@ Start the launcher GUI to manage server and client applications:
 python3 launcher.py
 ```
 
-###Generating and Sharing OTP
+#### Generating and Sharing OTP
 - Use launcher.py to access GenGUI.py and generate a One-Time Pad (OTP).
 - securely share the generated OTP file with your communication partner to enable encrypted communication.
+
+### 📂 Included Applications
+| File | Description | 
+|----------|----------|
+| launcher.py | Centralized launcher GUI  | 
+| TextASG.py  | Handles server-side encrypted text-based communication  | 
+| VoiceAC.py | Manages encrypted voice and text communication  | 
+| GenGUI.py  | Generates new One-Time Pads (OTPs)  | 
