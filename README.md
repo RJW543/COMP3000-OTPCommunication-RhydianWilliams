@@ -51,7 +51,34 @@ pip install tkinter pyngrok SpeechRecognition pyttsx3 pyaudio
 - pyaudio: Microphone input handling (used by SpeechRecognition)
 Note: If you face issues installing pyaudio, check the [PyAudio Installation Guide.](https://people.csail.mit.edu/hubert/pyaudio/#downloads)
 
+---
 
+⚙️ Configuration
 
+### Setting Up pyngrok
 
+Securely forward traffic by configuring your pyngrok authentication token:
 
+1. Sign up at Ngrok.
+3. Obtain your authtoken from your Ngrok dashboard.
+3.Configure your token by running:
+
+```bash
+ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
+```
+Replace YOUR_NGROK_AUTHTOKEN with your actual token.
+
+---
+
+▶️ Usage
+
+### Launching the Application
+
+Start the launcher GUI to manage server and client applications:
+```bash
+python3 launcher.py
+```
+
+###Generating and Sharing OTP
+- Use launcher.py to access GenGUI.py and generate a One-Time Pad (OTP).
+- securely share the generated OTP file with your communication partner to enable encrypted communication.
