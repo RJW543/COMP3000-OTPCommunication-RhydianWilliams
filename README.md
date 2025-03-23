@@ -93,5 +93,8 @@ python3 launcher.py
 
 ---
 
-###🔒 Security and Ethical Notice
+### 🔒 Security and Ethical Notice
 This system is intended solely for ethical and legal purposes. Users must adhere to applicable laws and ethical standards concerning data privacy and encryption.
+
+---
+Open source and free for anyone to use 
