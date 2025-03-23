@@ -9,7 +9,7 @@ Project Vision: This project is designed for individuals or institutions whose n
 
 # 🔐 Secure OTP-based Communication System
 
-This project provides a secure communication solution using One-Time Pad (OTP) encryption, ensuring theoretically unbreakable text and voice communication. It leverages Python applications, utilizing secure encryption mechanisms to protect privacy against interception.
+This project provides a secure communication solution using One-Time Pad (OTP) encryption, ensuring theoretically unbreakable text and voice communication. It leverages Python applications, utilising secure encryption mechanisms to protect privacy against interception.
 
 ---
 
