@@ -43,12 +43,12 @@ git clone https://github.com/RJW543/COMP3000-OTPCommunication-RhydianWilliams.gi
 pip install tkinter pyngrok SpeechRecognition pyttsx3 pyaudio
 ```
 
-###Dependencies Explained:
--tkinter: Python’s built-in GUI toolkit
--pyngrok: Secure public URL tunneling
--SpeechRecognition: Voice transcription capabilities
--pyttsx3: Text-to-speech conversion
--pyaudio: Microphone input handling (used by SpeechRecognition)
+### Dependencies Explained:
+- tkinter: Python’s built-in GUI toolkit
+- pyngrok: Secure public URL tunneling
+- SpeechRecognition: Voice transcription capabilities
+- pyttsx3: Text-to-speech conversion
+- pyaudio: Microphone input handling (used by SpeechRecognition)
 
 
 
