@@ -9,8 +9,6 @@ import pyttsx3
 import random
 import string
 
-FILLER_CHARS = string.ascii_letters + string.digits + string.punctuation + ' '
-
 # OTP Functions 
 
 def load_otp_pages(file_name="otp_cipher.txt"):
@@ -52,26 +50,29 @@ def get_next_otp_page_linux(otp_pages, used_identifiers, lock_file="used_pages.l
     return None, None
 
 def encrypt_message(message, otp_content):
-    if len(message) > len(otp_content):
-        raise ValueError("Message length exceeds OTP page length")
-
-    padded_message = message.ljust(len(otp_content), '*')
+    # Pad message to 5000 characters with 'X'
+    padded_message = message.ljust(5000, 'X')
 
     encrypted_message = []
-    for char, otp_char in zip(padded_message, otp_content):
-        encrypted_char = chr(ord(char) ^ ord(otp_char))
+    for i, char in enumerate(padded_message):
+        if i >= len(otp_content):
+            break
+        encrypted_char = chr(ord(char) ^ ord(otp_content[i]))
         encrypted_message.append(encrypted_char)
 
     return ''.join(encrypted_message)
 
+
 def decrypt_message(encrypted_message, otp_content):
     decrypted_message = []
-    for char, otp_char in zip(encrypted_message, otp_content):
-        decrypted_char = chr(ord(char) ^ ord(otp_char))
+    for i, char in enumerate(encrypted_message):
+        if i >= len(otp_content):
+            break
+        decrypted_char = chr(ord(char) ^ ord(otp_content[i]))
         decrypted_message.append(decrypted_char)
 
-    decrypted_text = ''.join(decrypted_message)
-    return decrypted_text.rstrip('*')
+    # Remove padding 'X's from the end of the decrypted message
+    return ''.join(decrypted_message).rstrip('X')
 
 
 # Client Class
