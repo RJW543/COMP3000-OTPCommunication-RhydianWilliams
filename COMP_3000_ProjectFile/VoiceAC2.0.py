@@ -6,6 +6,10 @@ from pathlib import Path
 import fcntl
 import speech_recognition as sr
 import pyttsx3
+import random
+import string
+
+FILLER_CHARS = string.ascii_letters + string.digits + string.punctuation + ' '
 
 # OTP Functions 
 
