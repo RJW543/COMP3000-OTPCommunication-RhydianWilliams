@@ -33,8 +33,17 @@ def fetch_random_seed():
     return response_data['result']['random']['data'][0]
 
 def generate_random_string(length):
-    """Generate a random string using the currently-seeded pseudorandom generator."""
-    chars = string.ascii_uppercase + string.digits + string.punctuation
+    """
+    Generate a random string using the currently-seeded pseudorandom generator,
+    excluding '|' and ':' to avoid breaking our message protocol.
+    """
+    punctuation_excluding_delimiters = "!\"#$%&'()*+,-./;<=>?@[\\]^_`{}~"  # ':' and '|' removed
+
+    chars = (
+        string.ascii_uppercase +
+        string.digits +
+        punctuation_excluding_delimiters
+    )
     return ''.join(random.choice(chars) for _ in range(length))
 
 def generate_otp_page(identifier_length=8, page_length=3500):
