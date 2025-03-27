@@ -37,7 +37,7 @@ def generate_random_string(length):
     chars = string.ascii_uppercase + string.digits + string.punctuation
     return ''.join(random.choice(chars) for _ in range(length))
 
-def generate_otp_page(identifier_length=8, page_length=5000):
+def generate_otp_page(identifier_length=8, page_length=3500):
     """
     Generate a single OTP page with a random identifier and OTP content.
     Note: The random module should already be seeded before calling.
@@ -50,9 +50,9 @@ def generate_otp_file(file_name="otp_cipher.txt", num_pages=10000, mode="standar
     """
     Generate an OTP file with each page on a new line.
     Mode can be 'standard', 'fast', or 'advanced'.
-    The page length is fixed at 5000 characters.
+    The page length is fixed at 3500 characters.
     """
-    page_length = 5000  
+    page_length = 3500
 
     if mode == "standard":
         # Fetch a true random seed from Random.org

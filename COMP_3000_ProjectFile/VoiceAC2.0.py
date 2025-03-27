@@ -50,8 +50,9 @@ def get_next_otp_page_linux(otp_pages, used_identifiers, lock_file="used_pages.l
     return None, None
 
 def encrypt_message(message, otp_content):
-    # Calculate padding needed to reach exactly 5000 characters
-    padding_length = 5000 - len(message)
+    # Calculate padding needed to reach exactly 3500 characters
+    page_size = 3500
+    padding_length = page_size - len(message)
     padded_message = message + ('X' * padding_length)
 
     encrypted_message = []
@@ -63,7 +64,6 @@ def encrypt_message(message, otp_content):
 
     return ''.join(encrypted_message)
 
-
 def decrypt_message(encrypted_message, otp_content):
     decrypted_message = []
     for i, char in enumerate(encrypted_message):
@@ -74,6 +74,7 @@ def decrypt_message(encrypted_message, otp_content):
 
     # Remove padding 'X's from the end of the decrypted message
     return ''.join(decrypted_message).rstrip('X')
+
 
 
 
