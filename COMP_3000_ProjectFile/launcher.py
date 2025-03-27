@@ -35,7 +35,7 @@ class MainMenuApp:
         Launch VoiceAC.py (the client GUI).
         """
         try:
-            subprocess.Popen([sys.executable, "VoiceAC.py"])
+            subprocess.Popen([sys.executable, "VoiceAC2.0.py"])
         except FileNotFoundError:
             messagebox.showerror("Error", "Could not find or launch VoiceAC.py")
 
