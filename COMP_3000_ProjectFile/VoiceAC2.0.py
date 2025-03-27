@@ -8,8 +8,8 @@ import speech_recognition as sr
 import pyttsx3
 import random
 import string
+import base64  
 
-# OTP Functions 
 
 def load_otp_pages(file_name="otp_cipher.txt"):
     otp_pages = []
@@ -62,6 +62,7 @@ def encrypt_message(message, otp_content):
         encrypted_char = chr(ord(char) ^ ord(otp_content[i]))
         encrypted_message.append(encrypted_char)
 
+    # Return the *raw XORed string* (NOT base64 yet)
     return ''.join(encrypted_message)
 
 def decrypt_message(encrypted_message, otp_content):
@@ -72,13 +73,8 @@ def decrypt_message(encrypted_message, otp_content):
         decrypted_char = chr(ord(char) ^ ord(otp_content[i]))
         decrypted_message.append(decrypted_char)
 
-    # Remove padding 'X's from the end of the decrypted message
     return ''.join(decrypted_message).rstrip('X')
 
-
-
-
-# Client Class
 
 class OTPClient:
     def __init__(self, master):
@@ -220,13 +216,20 @@ class OTPClient:
 
         otp_identifier, otp_content = self.get_next_available_otp()
         if otp_identifier and otp_content:
-            encrypted_message = encrypt_message(message, otp_content)
-            full_message = f"{recipient_id}|{otp_identifier}:{encrypted_message}"
+            # 1) XOR encryption (returns raw string)
+            raw_xor_cipher = encrypt_message(message, otp_content)
+
+            # 2) Base64-encode the XORed result so it can't contain ':' or '|'
+            b64_cipher = base64.b64encode(raw_xor_cipher.encode('utf-8')).decode('utf-8')
+
+            # 3) Build the message with the recipient, identifier, and base64 ciphertext
+            full_message = f"{recipient_id}|{otp_identifier}:{b64_cipher}"
+
             if self.client_socket:
                 try:
                     self.client_socket.sendall(full_message.encode("utf-8"))
                     self.text_input.delete(0, tk.END)
-                    self.update_chat_area(f"Me (Encrypted to {recipient_id}): {encrypted_message}")
+                    self.update_chat_area(f"Me (Encrypted to {recipient_id}): [Base64 Cipher] {b64_cipher}")
                 except Exception as e:
                     messagebox.showerror("Error", f"Failed to send message: {e}")
         else:
@@ -240,10 +243,12 @@ class OTPClient:
                     if not data:
                         break  # Server disconnected
                     message = data.decode("utf-8")
+
                     try:
                         sender_id, payload = message.split("|", 1)
-                        otp_identifier, actual_encrypted_message = payload.split(":", 1)
+                        otp_identifier, b64_encrypted_message = payload.split(":", 1)
 
+                        # 1) Find matching OTP content
                         otp_content = None
                         for identifier, content in self.otp_pages:
                             if identifier == otp_identifier:
@@ -251,14 +256,20 @@ class OTPClient:
                                 break
 
                         if otp_content:
-                            decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
+                            # 2) Base64-decode
+                            raw_encrypted_bytes = base64.b64decode(b64_encrypted_message.encode('utf-8'))
+                            raw_encrypted_str = raw_encrypted_bytes.decode('utf-8')
+
+                            # 3) XOR-decrypt
+                            decrypted_message = decrypt_message(raw_encrypted_str, otp_content)
+
                             self.update_chat_area(f"Received from {sender_id} (Decrypted): {decrypted_message}")
                             # Speak the decrypted message in a separate thread
                             threading.Thread(target=self.speak_text, args=(decrypted_message,), daemon=True).start()
                             save_used_page(otp_identifier)
                             self.used_identifiers.add(otp_identifier)
                         else:
-                            self.update_chat_area(f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}")
+                            self.update_chat_area(f"Received from {sender_id} (Unknown OTP): {b64_encrypted_message}")
                     except ValueError:
                         self.update_chat_area("Received an improperly formatted message.")
             except Exception as e:
