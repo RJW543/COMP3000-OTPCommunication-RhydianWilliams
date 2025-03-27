@@ -55,7 +55,7 @@ def encrypt_message(message, otp_content):
     if len(message) > len(otp_content):
         raise ValueError("Message length exceeds OTP page length")
 
-    padded_message = message + ''.join(random.choice(FILLER_CHARS) for _ in range(len(otp_content) - len(message)))
+    padded_message = message.ljust(len(otp_content), '*')
 
     encrypted_message = []
     for char, otp_char in zip(padded_message, otp_content):
@@ -71,7 +71,7 @@ def decrypt_message(encrypted_message, otp_content):
         decrypted_message.append(decrypted_char)
 
     decrypted_text = ''.join(decrypted_message)
-    return decrypted_text.rstrip(FILLER_CHARS)
+    return decrypted_text.rstrip('*')
 
 
 # Client Class
