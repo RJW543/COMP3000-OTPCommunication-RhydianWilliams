@@ -1,0 +1,1 @@
+This folder contains the OTPPi 2.0 code. Version 2.0 is experimental and is an attempted security upgrade, it intends to obfuscate the message size through padding.
