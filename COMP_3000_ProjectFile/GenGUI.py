@@ -33,17 +33,8 @@ def fetch_random_seed():
     return response_data['result']['random']['data'][0]
 
 def generate_random_string(length):
-    """
-    Generate a random string using the currently-seeded pseudorandom generator,
-    excluding '|' and ':' to avoid breaking our message protocol.
-    """
-    punctuation_excluding_delimiters = "!\"#$%&'()*+,-./;<=>?@[\\]^_`{}~"  # ':' and '|' removed
-
-    chars = (
-        string.ascii_uppercase +
-        string.digits +
-        punctuation_excluding_delimiters
-    )
+    """Generate a random string using the currently-seeded pseudorandom generator."""
+    chars = string.ascii_uppercase + string.digits + string.punctuation
     return ''.join(random.choice(chars) for _ in range(length))
 
 def generate_otp_page(identifier_length=8, page_length=3500):
@@ -61,7 +52,7 @@ def generate_otp_file(file_name="otp_cipher.txt", num_pages=10000, mode="standar
     Mode can be 'standard', 'fast', or 'advanced'.
     The page length is fixed at 3500 characters.
     """
-    page_length = 3500
+    page_length = 3500  
 
     if mode == "standard":
         # Fetch a true random seed from Random.org
