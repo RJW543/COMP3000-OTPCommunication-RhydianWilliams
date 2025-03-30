@@ -20,21 +20,26 @@ echo "Updating package list..."
 sudo apt update
 check_status "Package list updated."
 
-# Install Python3
-echo "Installing Python3..."
+# Install Python3 and pip
+echo "Installing Python3 and pip..."
 sudo apt install -y python3 python3-pip
 check_status "Python3 and pip installed."
 
-# Install Tkinter (required for GUI)
+# Install Tkinter for GUI
 echo "Installing Tkinter..."
 sudo apt install -y python3-tk
 check_status "Tkinter installed."
 
-# Install other necessary Python packages
+# Install PortAudio and build essentials for audio support
+echo "Installing PortAudio and build tools..."
+sudo apt install -y portaudio19-dev python3-pyaudio python3-dev build-essential ffmpeg
+check_status "PortAudio and related dependencies installed."
+
+# Upgrade pip and install Python packages
 echo "Installing required Python packages..."
 pip3 install --upgrade pip
-pip3 install requests
-check_status "Required Python packages installed."
+pip3 install requests pyttsx3 SpeechRecognition pyaudio
+check_status "All required Python packages installed."
 
 # Verify installations
 echo "Verifying installations..."
