@@ -37,7 +37,7 @@ class MainMenuApp:
         try:
             subprocess.Popen([sys.executable, "VoiceAC1.2.py"])
         except FileNotFoundError:
-            messagebox.showerror("Error", "Could not find or launch VoiceAC1.1.py")
+            messagebox.showerror("Error", "Could not find or launch VoiceAC1.2.py")
 
     def launch_gen_gui(self):
         """

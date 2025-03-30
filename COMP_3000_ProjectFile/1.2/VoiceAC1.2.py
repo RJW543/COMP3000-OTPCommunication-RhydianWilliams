@@ -6,8 +6,8 @@ from pathlib import Path
 import fcntl
 import speech_recognition as sr
 import pyttsx3
+import tkinter.simpledialog
 
-# OTP Functions 
 
 def load_otp_pages(file_name="otp_cipher.txt"):
     otp_pages = []
@@ -17,7 +17,7 @@ def load_otp_pages(file_name="otp_cipher.txt"):
     with file_path.open("r") as file:
         for line in file:
             if len(line) < 8:
-                continue  
+                continue
             identifier = line[:8]
             content = line[8:].strip()
             otp_pages.append((identifier, content))
@@ -66,12 +66,15 @@ def decrypt_message(encrypted_message, otp_content):
     return ''.join(decrypted_message)
 
 
-# Client Class
 
 class OTPClient:
     def __init__(self, master):
         self.master = master
         self.master.title("OTP Messaging Client")
+
+
+        self.user_id_file = Path("user_id.txt")
+        self.user_id = self.load_or_prompt_user_id()
 
         # Initialise OTP
         self.otp_pages = load_otp_pages()
@@ -98,16 +101,24 @@ class OTPClient:
         self.set_server_button = tk.Button(self.ngrok_frame, text="Set Server Address", command=self.set_server_address)
         self.set_server_button.pack(side=tk.LEFT)
 
-        # Frame for user ID
+
         self.user_id_frame = tk.Frame(master)
         self.user_id_label = tk.Label(self.user_id_frame, text="Enter your userID:")
         self.user_id_label.pack(side=tk.LEFT)
+
         self.user_id_entry = tk.Entry(self.user_id_frame, width=30)
         self.user_id_entry.pack(side=tk.LEFT)
+
+
+        if self.user_id:
+            self.user_id_entry.insert(0, self.user_id)
+
         self.connect_button = tk.Button(self.user_id_frame, text="Connect", command=self.connect_to_server)
         self.connect_button.pack(side=tk.LEFT)
 
-        # Message frame setup (hidden initially)
+        self.user_id_frame.pack(padx=10, pady=10)
+
+        # Message frame setup (hidden until connected)
         self.message_frame = tk.Frame(master)
         self.user_id_display = tk.Label(self.message_frame, text="")
         self.user_id_display.pack(pady=5)
@@ -139,6 +150,29 @@ class OTPClient:
         self.SERVER_HOST = None
         self.SERVER_PORT = None
 
+
+        self.chat_history_file = None
+        if self.user_id:
+            self.chat_history_file = Path(f"chat_history_{self.user_id}.txt")
+
+    def load_or_prompt_user_id(self):
+        """
+        Loads an existing userID from 'user_id.txt' if present.
+        Otherwise prompts for a userID once, then saves it.
+        """
+        if self.user_id_file.exists():
+            existing = self.user_id_file.read_text().strip()
+            if existing:
+                return existing
+
+
+        return None
+
+    def save_user_id_to_file(self, user_id):
+        """Saves the user ID to user_id.txt."""
+        with self.user_id_file.open("w") as f:
+            f.write(user_id)
+
     def set_server_address(self):
         host = self.ngrok_host_entry.get().strip()
         port = self.ngrok_port_entry.get().strip()
@@ -153,7 +187,7 @@ class OTPClient:
         self.SERVER_PORT = int(port)
         messagebox.showinfo("Info", f"Server address set to {self.SERVER_HOST}:{self.SERVER_PORT}")
 
-        self.user_id_frame.pack(padx=10, pady=10)
+        # Disable further edits
         self.ngrok_host_entry.config(state=tk.DISABLED)
         self.ngrok_port_entry.config(state=tk.DISABLED)
         self.set_server_button.config(state=tk.DISABLED)
@@ -163,10 +197,16 @@ class OTPClient:
             messagebox.showwarning("Warning", "Please set the server address first.")
             return
 
+        # Finalize user ID from Entry
         self.user_id = self.user_id_entry.get().strip()
         if not self.user_id:
             messagebox.showwarning("Warning", "Please enter a userID.")
             return
+
+        self.save_user_id_to_file(self.user_id)
+
+        # Update chat history file for this user
+        self.chat_history_file = Path(f"chat_history_{self.user_id}.txt")
 
         try:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -179,15 +219,34 @@ class OTPClient:
                 self.client_socket.close()
                 return
 
+            # Connected successfully
             messagebox.showinfo("Info", "Connected to the server.")
             self.user_id_frame.pack_forget()
             self.message_frame.pack(padx=10, pady=10)
             self.user_id_display.config(text=f"Your userID: {self.user_id}")
 
+            self.load_chat_history()
+
+            # Start a thread to handle incoming messages
             receive_thread = threading.Thread(target=self.receive_messages, daemon=True)
             receive_thread.start()
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to connect to the server: {e}")
+
+
+    def load_chat_history(self):
+        """Loads previous chat history from the user's chat_history file."""
+        if self.chat_history_file and self.chat_history_file.exists():
+            with self.chat_history_file.open("r", encoding="utf-8") as f:
+                for line in f:
+                    self.update_chat_area(line.strip(), save_to_file=False)
+
+    def save_chat_line(self, message):
+        """Appends a line to the user's chat history file."""
+        if self.chat_history_file:
+            with self.chat_history_file.open("a", encoding="utf-8") as f:
+                f.write(message + "\n")
 
     def get_next_available_otp(self):
         return get_next_otp_page_linux(self.otp_pages, self.used_identifiers)
@@ -214,7 +273,9 @@ class OTPClient:
                 try:
                     self.client_socket.sendall(full_message.encode("utf-8"))
                     self.text_input.delete(0, tk.END)
-                    self.update_chat_area(f"Me to {recipient_id}: {message}")
+                    # Show in local chat area
+                    display_line = f"Me to {recipient_id}: {message}"
+                    self.update_chat_area(display_line)
                 except Exception as e:
                     messagebox.showerror("Error", f"Failed to send message: {e}")
         else:
@@ -240,13 +301,16 @@ class OTPClient:
 
                         if otp_content:
                             decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
-                            self.update_chat_area(f"Received from {sender_id} (Decrypted): {decrypted_message}")
+                            display_line = f"Received from {sender_id} (Decrypted): {decrypted_message}"
+                            self.update_chat_area(display_line)
                             # Speak the decrypted message in a separate thread
                             threading.Thread(target=self.speak_text, args=(decrypted_message,), daemon=True).start()
+                            # Mark the page as used
                             save_used_page(otp_identifier)
                             self.used_identifiers.add(otp_identifier)
                         else:
-                            self.update_chat_area(f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}")
+                            display_line = f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}"
+                            self.update_chat_area(display_line)
                     except ValueError:
                         self.update_chat_area("Received an improperly formatted message.")
             except Exception as e:
@@ -258,11 +322,15 @@ class OTPClient:
         messagebox.showwarning("Warning", "Disconnected from the server.")
         self.master.quit()
 
-    def update_chat_area(self, message):
+    def update_chat_area(self, message, save_to_file=True):
+        """Inserts a new message line into the chat area and optionally saves it."""
         self.chat_area.config(state=tk.NORMAL)
         self.chat_area.insert(tk.END, message + "\n")
         self.chat_area.config(state=tk.DISABLED)
         self.chat_area.yview(tk.END)
+
+        if save_to_file:
+            self.save_chat_line(message)
 
     def record_voice_message(self):
         r = sr.Recognizer()
