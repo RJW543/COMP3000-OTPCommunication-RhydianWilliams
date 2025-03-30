@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext
 import socket
 import threading
+import base64 
 from pathlib import Path
 import fcntl
 import speech_recognition as sr
@@ -48,24 +49,45 @@ def get_next_otp_page_linux(otp_pages, used_identifiers, lock_file="used_pages.l
     return None, None
 
 def encrypt_message(message, otp_content):
-    """XOR-encrypt the message using the provided OTP content."""
-    encrypted_message = []
+    """
+    1) XOR the plaintext with the OTP content.
+    2) Then Base64-encode the XOR result to ensure
+       the ciphertext is always in Base64 format.
+    """
+    xor_chars = []
     for i, char in enumerate(message):
         if i >= len(otp_content):
             break
-        encrypted_char = chr(ord(char) ^ ord(otp_content[i]))
-        encrypted_message.append(encrypted_char)
-    return ''.join(encrypted_message)
+        xored_char = chr(ord(char) ^ ord(otp_content[i]))
+        xor_chars.append(xored_char)
+
+    # Convert XOR result to bytes
+    xor_bytes = ''.join(xor_chars).encode('utf-8')
+    # Base64-encode the XOR bytes
+    encoded_cipher = base64.b64encode(xor_bytes).decode('utf-8')
+    return encoded_cipher
 
 def decrypt_message(encrypted_message, otp_content):
-    """XOR-decrypt the message, then strip off any trailing X's used for padding."""
+    """
+    1) Base64-decode the ciphertext to get the XORed bytes.
+    2) XOR again with the OTP content to recover plaintext.
+    3) Strip trailing 'X' padding.
+    """
+    # Base64-decode to get original XOR bytes
+    xor_bytes = base64.b64decode(encrypted_message.encode('utf-8'))
+
+    # Convert bytes back to a string (the XORed result)
+    xored_str = xor_bytes.decode('utf-8')
+
+    # Now XOR with the OTP to get the plaintext
     decrypted_chars = []
-    for i, char in enumerate(encrypted_message):
+    for i, char in enumerate(xored_str):
         if i >= len(otp_content):
             break
-        decrypted_char = chr(ord(char) ^ ord(otp_content[i]))
-        decrypted_chars.append(decrypted_char)
-    # Remove trailing padding
+        plain_char = chr(ord(char) ^ ord(otp_content[i]))
+        decrypted_chars.append(plain_char)
+
+    # Remove trailing 'X' padding
     return ''.join(decrypted_chars).rstrip('X')
 
 
@@ -133,6 +155,7 @@ class OTPClient:
         self.send_button = tk.Button(self.message_frame, text="Send Text Message", command=self.send_message)
         self.send_button.pack(pady=(5, 2))
 
+        # Button for recording and sending a voice message
         self.record_button = tk.Button(self.message_frame, text="Record Voice Message", command=self.send_voice_message)
         self.record_button.pack(pady=(2, 5))
 
@@ -195,8 +218,9 @@ class OTPClient:
 
     def send_message(self):
         """
-        Pad the message to a fixed length (3500) with 'X'
-        before encrypting and sending.
+        1) Pad the message to a fixed length (3500) with 'X'.
+        2) XOR + Base64-encode it.
+        3) Send as recipient|otpID:encryptedBase64
         """
         recipient_id = self.recipient_input.get().strip()
         original_message = self.text_input.get()
@@ -211,15 +235,14 @@ class OTPClient:
             messagebox.showwarning("Warning", "You cannot send a message to yourself.")
             return
 
-        # Check length
         if len(original_message) > 3500:
             messagebox.showwarning("Warning", "Message is too long (exceeds 3500 characters).")
             return
 
-        # Pad the message to 3500 chars with 'X'
+        # Pad the message
         padded_message = original_message + ('X' * (3500 - len(original_message)))
 
-        # Fetch OTP
+        # Get OTP
         otp_identifier, otp_content = self.get_next_available_otp()
         if otp_identifier and otp_content:
             encrypted_message = encrypt_message(padded_message, otp_content)
@@ -235,12 +258,6 @@ class OTPClient:
             messagebox.showerror("Error", "No available OTP pages to use.")
 
     def receive_messages(self):
-        """
-        Updated logic:
-          - If the message contains both "|" and ":", assume it's in the format
-            "sender_id|otp_identifier:encrypted_message".
-          - Otherwise, treat it as a plain text / server status message.
-        """
         while True:
             try:
                 if self.client_socket:
@@ -280,7 +297,7 @@ class OTPClient:
                         except ValueError:
                             self.update_chat_area("Received an improperly formatted message.")
                     else:
-                        # No delimiters: treat as a plain/server message
+                        # No delimiters => plain/server message
                         self.update_chat_area(f"Server message: {message}")
             except Exception as e:
                 print(f"Error receiving message: {e}")
@@ -313,7 +330,7 @@ class OTPClient:
             except sr.UnknownValueError:
                 self.update_chat_area("Could not understand the voice message.")
                 return ""
-            except sr.RequestError as e:
+            except sr.RequestError:
                 self.update_chat_area("Error with transcription service.")
                 return ""
         except Exception as e:
