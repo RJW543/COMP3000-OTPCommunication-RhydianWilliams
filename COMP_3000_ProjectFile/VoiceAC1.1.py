@@ -7,44 +7,7 @@ import fcntl
 import speech_recognition as sr
 import pyttsx3
 
-BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-
-def custom_base64_encode(raw_bytes):
-
-    # Convert the bytes into an integer
-    big_int = int.from_bytes(raw_bytes, byteorder='big', signed=False)
-    # Special case for zero
-    if big_int == 0 and len(raw_bytes) > 0:
-        return "A"
-    if big_int == 0:
-        # If there's truly no data (raw_bytes is empty), return empty string
-        return ""
-
-    # Repeatedly divide by 62, collecting remainders
-    encoded_chars = []
-    while big_int > 0:
-        remainder = big_int % 62
-        big_int = big_int // 62
-        encoded_chars.append(BASE64_CHARS[remainder])
-    # The remainders come out in reverse order
-    encoded_chars.reverse()
-    return "".join(encoded_chars)
-
-def custom_base64_decode(encoded_str):
-
-    # Edge case
-    if not encoded_str:
-        return b""
-
-    # Convert back from base62 to integer
-    big_int = 0
-    for c in encoded_str:
-        big_int = big_int * 62 + BASE64_CHARS.index(c)
-
-
-    byte_length = (big_int.bit_length() + 7) // 8  # how many 8-bit bytes needed
-    return big_int.to_bytes(byte_length, byteorder='big', signed=False)
-
+# OTP Functions 
 
 def load_otp_pages(file_name="otp_cipher.txt"):
     otp_pages = []
@@ -85,38 +48,25 @@ def get_next_otp_page_linux(otp_pages, used_identifiers, lock_file="used_pages.l
     return None, None
 
 def encrypt_message(message, otp_content):
-
-    xor_list = []
+    encrypted_message = []
     for i, char in enumerate(message):
         if i >= len(otp_content):
             break
-        # XOR each character
-        xored_char = chr(ord(char) ^ ord(otp_content[i]))
-        xor_list.append(xored_char)
-
-    # Convert the XORed string into raw bytes
-    raw_bytes = ''.join(xor_list).encode('utf-8')
-    # Encode using our custom base62 approach
-    encoded_cipher = custom_base64_encode(raw_bytes)
-    return encoded_cipher
+        encrypted_char = chr(ord(char) ^ ord(otp_content[i]))
+        encrypted_message.append(encrypted_char)
+    return ''.join(encrypted_message)
 
 def decrypt_message(encrypted_message, otp_content):
-    # Decode the base62 ciphertext into XORed bytes
-    xored_bytes = custom_base64_decode(encrypted_message)
-    # Convert back to a string
-    xored_str = xored_bytes.decode('utf-8')
-
-    # XOR again to get plaintext
-    decrypted_chars = []
-    for i, char in enumerate(xored_str):
+    decrypted_message = []
+    for i, char in enumerate(encrypted_message):
         if i >= len(otp_content):
             break
-        plain_char = chr(ord(char) ^ ord(otp_content[i]))
-        decrypted_chars.append(plain_char)
+        decrypted_char = chr(ord(char) ^ ord(otp_content[i]))
+        decrypted_message.append(decrypted_char)
+    return ''.join(decrypted_message)
 
-    # Strip trailing 'X' from the padded message
-    return ''.join(decrypted_chars).rstrip('X')
 
+# Client Class
 
 class OTPClient:
     def __init__(self, master):
@@ -171,6 +121,7 @@ class OTPClient:
         self.recipient_input = tk.Entry(self.message_frame, width=50)
         self.recipient_input.pack(pady=5)
 
+        # Label + Entry for the message text
         self.message_label = tk.Label(self.message_frame, text="Message to send:")
         self.message_label.pack()
         self.text_input = tk.Entry(self.message_frame, width=50)
@@ -180,7 +131,7 @@ class OTPClient:
         self.send_button = tk.Button(self.message_frame, text="Send Text Message", command=self.send_message)
         self.send_button.pack(pady=(5, 2))
 
-        # Record Voice Message button
+        # New button for recording and sending a voice message
         self.record_button = tk.Button(self.message_frame, text="Record Voice Message", command=self.send_voice_message)
         self.record_button.pack(pady=(2, 5))
 
@@ -243,35 +194,27 @@ class OTPClient:
 
     def send_message(self):
         recipient_id = self.recipient_input.get().strip()
-        original_message = self.text_input.get()
+        message = self.text_input.get()
 
         if not recipient_id:
             messagebox.showwarning("Warning", "Please enter a valid recipient userID.")
             return
-        if not original_message:
+        if not message:
             messagebox.showwarning("Warning", "Please enter a message.")
             return
         if recipient_id == self.user_id:
             messagebox.showwarning("Warning", "You cannot send a message to yourself.")
             return
 
-        if len(original_message) > 3500:
-            messagebox.showwarning("Warning", "Message is too long (exceeds 3500 characters).")
-            return
-
-        # Pad the message
-        padded_message = original_message + ('X' * (3500 - len(original_message)))
-
-        # Get OTP
         otp_identifier, otp_content = self.get_next_available_otp()
         if otp_identifier and otp_content:
-            encrypted_message = encrypt_message(padded_message, otp_content)
+            encrypted_message = encrypt_message(message, otp_content)
             full_message = f"{recipient_id}|{otp_identifier}:{encrypted_message}"
             if self.client_socket:
                 try:
                     self.client_socket.sendall(full_message.encode("utf-8"))
                     self.text_input.delete(0, tk.END)
-                    self.update_chat_area(f"Me (Encrypted to {recipient_id}): {encrypted_message}")
+                    self.update_chat_area(f"Me to {recipient_id}: {message}")
                 except Exception as e:
                     messagebox.showerror("Error", f"Failed to send message: {e}")
         else:
@@ -285,40 +228,27 @@ class OTPClient:
                     if not data:
                         break  # Server disconnected
                     message = data.decode("utf-8")
+                    try:
+                        sender_id, payload = message.split("|", 1)
+                        otp_identifier, actual_encrypted_message = payload.split(":", 1)
 
-                    # Check format
-                    if "|" in message and ":" in message:
-                        try:
-                            sender_id, payload = message.split("|", 1)
-                            otp_identifier, actual_encrypted_message = payload.split(":", 1)
+                        otp_content = None
+                        for identifier, content in self.otp_pages:
+                            if identifier == otp_identifier:
+                                otp_content = content
+                                break
 
-                            # Find the matching OTP page
-                            otp_content = None
-                            for identifier, content in self.otp_pages:
-                                if identifier == otp_identifier:
-                                    otp_content = content
-                                    break
-
-                            if otp_content:
-                                decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
-                                self.update_chat_area(f"Received from {sender_id} (Decrypted): {decrypted_message}")
-                                # Text-to-speech in a separate thread
-                                threading.Thread(
-                                    target=self.speak_text,
-                                    args=(decrypted_message,),
-                                    daemon=True
-                                ).start()
-                                save_used_page(otp_identifier)
-                                self.used_identifiers.add(otp_identifier)
-                            else:
-                                self.update_chat_area(
-                                    f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}"
-                                )
-                        except ValueError:
-                            self.update_chat_area("Received an improperly formatted message.")
-                    else:
-                        # Plain/server message
-                        self.update_chat_area(f"Server message: {message}")
+                        if otp_content:
+                            decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
+                            self.update_chat_area(f"Received from {sender_id} (Decrypted): {decrypted_message}")
+                            # Speak the decrypted message in a separate thread
+                            threading.Thread(target=self.speak_text, args=(decrypted_message,), daemon=True).start()
+                            save_used_page(otp_identifier)
+                            self.used_identifiers.add(otp_identifier)
+                        else:
+                            self.update_chat_area(f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}")
+                    except ValueError:
+                        self.update_chat_area("Received an improperly formatted message.")
             except Exception as e:
                 print(f"Error receiving message: {e}")
                 break
@@ -350,7 +280,7 @@ class OTPClient:
             except sr.UnknownValueError:
                 self.update_chat_area("Could not understand the voice message.")
                 return ""
-            except sr.RequestError:
+            except sr.RequestError as e:
                 self.update_chat_area("Error with transcription service.")
                 return ""
         except Exception as e:
