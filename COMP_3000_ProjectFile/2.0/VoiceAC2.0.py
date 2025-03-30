@@ -275,7 +275,6 @@ def receive_messages(self):
                     except ValueError:
                         self.update_chat_area("Received an improperly formatted message.")
                 else:
-                    # If there's no | or :, treat it as a status or error message
                     self.update_chat_area(f"Server message: {message}")
 
         except Exception as e:
