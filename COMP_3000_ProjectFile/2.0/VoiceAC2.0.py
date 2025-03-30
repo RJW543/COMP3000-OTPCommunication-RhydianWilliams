@@ -7,7 +7,7 @@ import fcntl
 import speech_recognition as sr
 import pyttsx3
 
-# OTP Functions 
+# OTP Functions
 
 def load_otp_pages(file_name="otp_cipher.txt"):
     otp_pages = []
@@ -58,13 +58,14 @@ def encrypt_message(message, otp_content):
     return ''.join(encrypted_message)
 
 def decrypt_message(encrypted_message, otp_content):
-    """XOR-decrypt the message, then strip off any trailing X's."""
+    """XOR-decrypt the message, then strip off any trailing X's used for padding."""
     decrypted_chars = []
     for i, char in enumerate(encrypted_message):
         if i >= len(otp_content):
             break
         decrypted_char = chr(ord(char) ^ ord(otp_content[i]))
         decrypted_chars.append(decrypted_char)
+    # Remove trailing padding
     return ''.join(decrypted_chars).rstrip('X')
 
 
@@ -210,14 +211,15 @@ class OTPClient:
             messagebox.showwarning("Warning", "You cannot send a message to yourself.")
             return
 
+        # Check length
         if len(original_message) > 3500:
             messagebox.showwarning("Warning", "Message is too long (exceeds 3500 characters).")
             return
 
-        # Pad the message up to 3500 characters with 'X'
+        # Pad the message to 3500 chars with 'X'
         padded_message = original_message + ('X' * (3500 - len(original_message)))
 
-        # Fetch the OTP page
+        # Fetch OTP
         otp_identifier, otp_content = self.get_next_available_otp()
         if otp_identifier and otp_content:
             encrypted_message = encrypt_message(padded_message, otp_content)
@@ -232,59 +234,62 @@ class OTPClient:
         else:
             messagebox.showerror("Error", "No available OTP pages to use.")
 
-def receive_messages(self):
-    while True:
-        try:
-            if self.client_socket:
-                data = self.client_socket.recv(4096)
-                if not data:
-                    break  # Server disconnected
-                
-                message = data.decode("utf-8")
-                
-                print("Raw data received:", message)
+    def receive_messages(self):
+        """
+        Updated logic:
+          - If the message contains both "|" and ":", assume it's in the format
+            "sender_id|otp_identifier:encrypted_message".
+          - Otherwise, treat it as a plain text / server status message.
+        """
+        while True:
+            try:
+                if self.client_socket:
+                    data = self.client_socket.recv(4096)
+                    if not data:
+                        break  # Server disconnected
+                    message = data.decode("utf-8")
 
-                # Check if this message follows "sender_id|otp_identifier:encrypted"
-                if "|" in message and ":" in message:
-                    try:
-                        sender_id, payload = message.split("|", 1)
-                        otp_identifier, actual_encrypted_message = payload.split(":", 1)
+                    # Check if message has both "|" and ":"
+                    if "|" in message and ":" in message:
+                        try:
+                            sender_id, payload = message.split("|", 1)
+                            otp_identifier, actual_encrypted_message = payload.split(":", 1)
 
-                        # Find matching OTP
-                        otp_content = None
-                        for identifier, content in self.otp_pages:
-                            if identifier == otp_identifier:
-                                otp_content = content
-                                break
+                            # Find the matching OTP page
+                            otp_content = None
+                            for identifier, content in self.otp_pages:
+                                if identifier == otp_identifier:
+                                    otp_content = content
+                                    break
 
-                        if otp_content:
-                            decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
-                            self.update_chat_area(f"Received from {sender_id} (Decrypted): {decrypted_message}")
-                            threading.Thread(
-                                target=self.speak_text,
-                                args=(decrypted_message,),
-                                daemon=True
-                            ).start()
-                            save_used_page(otp_identifier)
-                            self.used_identifiers.add(otp_identifier)
-                        else:
-                            self.update_chat_area(
-                                f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}"
-                            )
+                            if otp_content:
+                                decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
+                                self.update_chat_area(f"Received from {sender_id} (Decrypted): {decrypted_message}")
+                                # Speak the decrypted message in a separate thread
+                                threading.Thread(
+                                    target=self.speak_text,
+                                    args=(decrypted_message,),
+                                    daemon=True
+                                ).start()
+                                save_used_page(otp_identifier)
+                                self.used_identifiers.add(otp_identifier)
+                            else:
+                                self.update_chat_area(
+                                    f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}"
+                                )
+                        except ValueError:
+                            self.update_chat_area("Received an improperly formatted message.")
+                    else:
+                        # No delimiters: treat as a plain/server message
+                        self.update_chat_area(f"Server message: {message}")
+            except Exception as e:
+                print(f"Error receiving message: {e}")
+                break
 
-                    except ValueError:
-                        self.update_chat_area("Received an improperly formatted message.")
-                else:
-                    self.update_chat_area(f"Server message: {message}")
-
-        except Exception as e:
-            print(f"Error receiving message: {e}")
-            break
-
-    if self.client_socket:
-        self.client_socket.close()
-    messagebox.showwarning("Warning", "Disconnected from the server.")
-    self.master.quit()
+        if self.client_socket:
+            self.client_socket.close()
+        messagebox.showwarning("Warning", "Disconnected from the server.")
+        self.master.quit()
 
     def update_chat_area(self, message):
         self.chat_area.config(state=tk.NORMAL)
