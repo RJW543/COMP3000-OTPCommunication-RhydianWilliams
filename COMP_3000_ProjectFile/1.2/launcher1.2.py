@@ -44,9 +44,9 @@ class MainMenuApp:
         Launch GenGUI.py (the OTP generator GUI).
         """
         try:
-            subprocess.Popen([sys.executable, "GenGUI.py"])
+            subprocess.Popen([sys.executable, "GenGUI1.2.py"])
         except FileNotFoundError:
-            messagebox.showerror("Error", "Could not find or launch GenGUI.py")
+            messagebox.showerror("Error", "Could not find or launch GenGUI1.2.py")
 
 
 def main():
