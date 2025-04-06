@@ -67,8 +67,6 @@ def decrypt_message(encrypted_message, otp_content):
     return ''.join(decrypted_message)
 
 
-
-
 class OTPClient:
     def __init__(self, master):
         self.master = master
@@ -77,44 +75,35 @@ class OTPClient:
         self.master.geometry("700x600")
         self.master.minsize(600, 500)
 
-        # Use a default theme for ttk
         style = ttk.Style()
         style.theme_use('clam') 
 
-        # Create a menu bar
         menu_bar = tk.Menu(self.master)
         self.master.config(menu=menu_bar)
 
-        # File Menu
         file_menu = tk.Menu(menu_bar, tearoff=False)
         file_menu.add_command(label="About", command=self.show_about_info)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.master.quit)
         menu_bar.add_cascade(label="File", menu=file_menu)
 
-        # Read or request user ID
         self.user_id_file = Path("user_id.txt")
         self.user_id = self.load_or_prompt_user_id()
 
-        # Initialise OTP
         self.otp_pages = load_otp_pages()
         self.used_identifiers = load_used_pages()
 
-        # Variables for server
         self.SERVER_HOST = None
         self.SERVER_PORT = None
         self.client_socket = None
 
-        # Chat history file (set after user_id is final)
         self.chat_history_file = Path(f"chat_history_{self.user_id}.txt") if self.user_id else None
 
-        # Main container frame
         self.main_frame = ttk.Frame(self.master, padding="10 10 10 10")
         self.main_frame.grid(row=0, column=0, sticky="nsew")
         self.master.rowconfigure(0, weight=1)
         self.master.columnconfigure(0, weight=1)
 
-        # Create sub-frames for layout
         self.server_frame = ttk.Frame(self.main_frame, padding=(0, 10, 0, 10))
         self.server_frame.grid(row=0, column=0, sticky="ew")
 
@@ -124,9 +113,7 @@ class OTPClient:
         self.message_frame = ttk.Frame(self.main_frame)
         self.message_frame.grid(row=2, column=0, sticky="nsew")
 
-        # Configure columns for auto resising
         self.main_frame.columnconfigure(0, weight=1)
-
 
         ttk.Label(self.server_frame, text="Ngrok Host:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
         self.ngrok_host_entry = ttk.Entry(self.server_frame, width=20)
@@ -138,14 +125,12 @@ class OTPClient:
         self.ngrok_port_entry.insert(0, "12345")
         self.ngrok_port_entry.grid(row=0, column=3, padx=5, pady=5)
 
-        self.set_server_button = ttk.Button(self.server_frame, text="Set Server Address",
-                                            command=self.set_server_address)
+        self.set_server_button = ttk.Button(self.server_frame, text="Set Server Address", command=self.set_server_address)
         self.set_server_button.grid(row=0, column=4, padx=10, pady=5)
 
         ttk.Label(self.user_id_frame, text="Your userID:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
         self.user_id_entry = ttk.Entry(self.user_id_frame, width=30)
         self.user_id_entry.grid(row=0, column=1, padx=5, pady=5)
-
 
         if self.user_id:
             self.user_id_entry.insert(0, self.user_id)
@@ -153,46 +138,34 @@ class OTPClient:
         self.connect_button = ttk.Button(self.user_id_frame, text="Connect", command=self.connect_to_server)
         self.connect_button.grid(row=0, column=2, padx=10, pady=5)
 
-
         self.user_id_display = ttk.Label(self.message_frame, text="", style="Bold.TLabel")
         self.user_id_display.grid(row=0, column=0, columnspan=3, padx=5, pady=5, sticky="ew")
 
-
         self.chat_area = scrolledtext.ScrolledText(self.message_frame, width=60, height=15, state=tk.DISABLED)
         self.chat_area.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky="nsew")
-        self.message_frame.rowconfigure(1, weight=1)  # allow chat_area to expand vertically
-
+        self.message_frame.rowconfigure(1, weight=1)
 
         ttk.Label(self.message_frame, text="Recipient userID:").grid(row=2, column=0, padx=5, sticky="e")
         self.recipient_input = ttk.Entry(self.message_frame, width=40)
         self.recipient_input.grid(row=2, column=1, padx=5, pady=5, sticky="w")
 
-
         ttk.Label(self.message_frame, text="Message:").grid(row=3, column=0, padx=5, sticky="e")
         self.text_input = ttk.Entry(self.message_frame, width=40)
         self.text_input.grid(row=3, column=1, padx=5, pady=5, sticky="w")
 
-        # Send buttons
         self.send_button = ttk.Button(self.message_frame, text="Send Text Message", command=self.send_message)
         self.send_button.grid(row=4, column=0, padx=5, pady=5, sticky="e")
 
         self.record_button = ttk.Button(self.message_frame, text="Record Voice Message", command=self.send_voice_message)
         self.record_button.grid(row=4, column=1, padx=5, pady=5, sticky="w")
 
-        # Initially hide message_frame
         for child in self.message_frame.winfo_children():
             child.grid_remove()
-
 
     def show_about_info(self):
         messagebox.showinfo("About", "OTP Messaging Client\nVersion 1.0\nUsing Tkinter & Python.")
 
-
     def load_or_prompt_user_id(self):
-        """
-        Loads an existing userID from 'user_id.txt' if present.
-        Otherwise returns None so user can type it in the UI.
-        """
         if self.user_id_file.exists():
             existing = self.user_id_file.read_text().strip()
             if existing:
@@ -200,13 +173,9 @@ class OTPClient:
         return None
 
     def save_user_id_to_file(self, user_id):
-        """Saves the user ID to user_id.txt."""
         with self.user_id_file.open("w") as f:
             f.write(user_id)
 
-    # ---------------------------------------------------------------------
-    # Server Address Setup
-    # ---------------------------------------------------------------------
     def set_server_address(self):
         host = self.ngrok_host_entry.get().strip()
         port = self.ngrok_port_entry.get().strip()
@@ -221,18 +190,15 @@ class OTPClient:
         self.SERVER_PORT = int(port)
         messagebox.showinfo("Info", f"Server address set to {self.SERVER_HOST}:{self.SERVER_PORT}")
 
-        # Disable further edits
         self.ngrok_host_entry.config(state=tk.DISABLED)
         self.ngrok_port_entry.config(state=tk.DISABLED)
         self.set_server_button.config(state=tk.DISABLED)
-
 
     def connect_to_server(self):
         if self.SERVER_HOST is None or self.SERVER_PORT is None:
             messagebox.showwarning("Warning", "Please set the server address first.")
             return
 
-        # Finalize user ID from Entry
         self.user_id = self.user_id_entry.get().strip()
         if not self.user_id:
             messagebox.showwarning("Warning", "Please enter a userID.")
@@ -240,10 +206,8 @@ class OTPClient:
 
         self.save_user_id_to_file(self.user_id)
 
-        # Update chat history file for this user
         self.chat_history_file = Path(f"chat_history_{self.user_id}.txt")
 
-        # Attempt connection
         try:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.connect((self.SERVER_HOST, self.SERVER_PORT))
@@ -257,39 +221,31 @@ class OTPClient:
 
             messagebox.showinfo("Info", "Connected to the server.")
 
-            # Hide user ID frame once connected
             for child in self.user_id_frame.winfo_children():
                 child.grid_remove()
-            # Show the message_frame’s children
             for child in self.message_frame.winfo_children():
-                child.grid()  # restore them
+                child.grid()
 
             self.user_id_display.config(text=f"Your userID: {self.user_id}")
 
-            # Load previous conversation for this user (if any)
             self.load_chat_history()
 
-            # Start a thread to handle incoming messages
             receive_thread = threading.Thread(target=self.receive_messages, daemon=True)
             receive_thread.start()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to connect to the server: {e}")
 
-
     def load_chat_history(self):
-        """Loads previous chat history from the user's chat_history file."""
         if self.chat_history_file and self.chat_history_file.exists():
             with self.chat_history_file.open("r", encoding="utf-8") as f:
                 for line in f:
                     self.update_chat_area(line.strip(), save_to_file=False)
 
     def save_chat_line(self, message):
-        """Appends a line to the user's chat history file."""
         if self.chat_history_file:
             with self.chat_history_file.open("a", encoding="utf-8") as f:
                 f.write(message + "\n")
-
 
     def get_next_available_otp(self):
         return get_next_otp_page_linux(self.otp_pages, self.used_identifiers)
@@ -316,7 +272,6 @@ class OTPClient:
                 try:
                     self.client_socket.sendall(full_message.encode("utf-8"))
                     self.text_input.delete(0, tk.END)
-                    # Show in local chat area
                     display_line = f"Me to {recipient_id}: {message}"
                     self.update_chat_area(display_line)
                 except Exception as e:
@@ -330,7 +285,7 @@ class OTPClient:
                 if self.client_socket:
                     data = self.client_socket.recv(4096)
                     if not data:
-                        break  # Server disconnected
+                        break
                     message = data.decode("utf-8")
                     try:
                         sender_id, payload = message.split("|", 1)
@@ -346,9 +301,7 @@ class OTPClient:
                             decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
                             display_line = f"Received from {sender_id} (Decrypted): {decrypted_message}"
                             self.update_chat_area(display_line)
-                            # Speak the decrypted message in a separate thread
                             threading.Thread(target=self.speak_text, args=(decrypted_message,), daemon=True).start()
-                            # Mark the page as used
                             save_used_page(otp_identifier)
                             self.used_identifiers.add(otp_identifier)
                         else:
@@ -366,7 +319,6 @@ class OTPClient:
         self.master.quit()
 
     def update_chat_area(self, message, save_to_file=True):
-        """Inserts a new message line into the chat area and optionally saves it."""
         self.chat_area.config(state=tk.NORMAL)
         self.chat_area.insert(tk.END, message + "\n")
         self.chat_area.config(state=tk.DISABLED)
@@ -411,7 +363,18 @@ class OTPClient:
         engine.runAndWait()
 
 
+def show_disclaimer():
+    disclaimer_text = (
+        "DISCLAIMER:\n\n"
+        "This software is intended for educational and lawful use only. "
+        "Any misuse of this encryption technology for illegal or unethical purposes is strongly discouraged. "
+        "Users are responsible for complying with all applicable laws and regulations in their jurisdiction."
+    )
+    messagebox.showinfo("Disclaimer", disclaimer_text)
+
+
 if __name__ == "__main__":
     root = tk.Tk()
+    show_disclaimer()
     client_app = OTPClient(root)
     root.mainloop()
