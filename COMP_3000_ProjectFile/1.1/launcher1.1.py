@@ -26,9 +26,9 @@ class MainMenuApp:
         Launch TextASG.py (the server GUI).
         """
         try:
-            subprocess.Popen([sys.executable, "TextASG.py"])
+            subprocess.Popen([sys.executable, "TextASG1.1.py"])
         except FileNotFoundError:
-            messagebox.showerror("Error", "Could not find or launch TextASG.py")
+            messagebox.showerror("Error", "Could not find or launch TextASG1.1.py")
 
     def launch_client_gui(self):
         """
@@ -44,9 +44,9 @@ class MainMenuApp:
         Launch GenGUI.py (the OTP generator GUI).
         """
         try:
-            subprocess.Popen([sys.executable, "GenGUI.py"])
+            subprocess.Popen([sys.executable, "GenGUI1.1.py"])
         except FileNotFoundError:
-            messagebox.showerror("Error", "Could not find or launch GenGUI.py")
+            messagebox.showerror("Error", "Could not find or launch GenGUI1.1.py")
 
 
 def main():
