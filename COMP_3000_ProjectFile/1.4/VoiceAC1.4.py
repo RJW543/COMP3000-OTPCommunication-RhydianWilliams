@@ -163,7 +163,7 @@ class OTPClient:
             child.grid_remove()
 
     def show_about_info(self):
-        messagebox.showinfo("About", "OTP Messaging Client\nVersion 1.0\nUsing Tkinter & Python.")
+        messagebox.showinfo("About", "OTP Messaging Client\nVersion 1.4\nUsing Tkinter & Python.")
 
     def load_or_prompt_user_id(self):
         if self.user_id_file.exists():

@@ -185,7 +185,7 @@ class OTPClient:
 
 
     def show_about_info(self):
-        messagebox.showinfo("About", "OTP Messaging Client\nVersion 1.0\nUsing Tkinter & Python.")
+        messagebox.showinfo("About", "OTP Messaging Client\nVersion 1.3\nUsing Tkinter & Python.")
 
 
     def load_or_prompt_user_id(self):
