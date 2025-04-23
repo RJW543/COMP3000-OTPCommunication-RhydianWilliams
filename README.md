@@ -72,7 +72,7 @@ Replace YOUR_NGROK_AUTHTOKEN with your actual token.
 
 ▶️ Usage
 
-| Step | DAction | 
+| Step | Action | 
 |----------|----------|
 | Generate OTP | $ python3 Launcher1.4.py → Generate a new OTP → choose pages & mode.File otp_cipher.txt appears in the same folder – copy it (securely!) to every client. | 
 | Start Server | server GUI  | 
