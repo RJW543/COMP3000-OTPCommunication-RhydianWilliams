@@ -75,8 +75,7 @@ Replace YOUR_NGROK_AUTHTOKEN with your actual token.
 | Step | Action | 
 |----------|----------|
 | Generate OTP | $ python3 Launcher1.4.py → Generate a new OTP → choose pages & mode.File otp_cipher.txt appears in the same folder – copy it (securely!) to every client. | 
-| Start Server | server GUI  | 
-| VoiceAC1.4.py | In the launcher click Host Server.The server window shows a green Server is RUNNING message plus Ngrok Host and Port. Share these with your peers.  | 
+| Start Server | In the launcher click Host Server.The server window shows a green Server is RUNNING message plus Ngrok Host and Port. Share these with your peers  | 
 | Run Client   | On each client machine: Run Client → enter Ngrok host/port → set a unique userID → Connect.  | 
 | Send | Choose a recipient ID, type a message or press Record Voice Message, then Send.  | 
 
