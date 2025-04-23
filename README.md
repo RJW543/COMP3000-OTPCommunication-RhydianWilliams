@@ -19,7 +19,7 @@ This project provides a secure communication solution using One-Time Pad (OTP) e
 - **Integrated Communication**: Supports both text and voice
 - **Intuitive GUI**: User-friendly graphical interface
 - **Easy Setup**: Single launcher for all functions
-- **Works with voice**: Recording, transcription, encryption, and playback
+- **Chat History & OTP Management**: Per‑user chat logs and automatic tracking/locking of used OTP pages (used_pages.txt).
 
 ---
 
@@ -72,29 +72,27 @@ Replace YOUR_NGROK_AUTHTOKEN with your actual token.
 
 ▶️ Usage
 
-### Launching the Application
+| Step | DAction | 
+|----------|----------|
+| Generate OTP | $ python3 Launcher1.4.py → Generate a new OTP → choose pages & mode.File otp_cipher.txt appears in the same folder – copy it (securely!) to every client. | 
+| Start Server | server GUI  | 
+| VoiceAC1.4.py | In the launcher click Host Server.The server window shows a green Server is RUNNING message plus Ngrok Host and Port. Share these with your peers.  | 
+| Run Client   | On each client machine: Run Client → enter Ngrok host/port → set a unique userID → Connect.  | 
+| Send | Choose a recipient ID, type a message or press Record Voice Message, then Send.  | 
 
-Start the launcher GUI to manage server and client applications:
-```bash
-python3 launcher.py
-```
-
-#### Generating and Sharing OTP
-- Use launcher.py to access GenGUI.py and generate a One-Time Pad (OTP).
-- securely share the generated OTP file with your communication partner to enable encrypted communication.
-
-### 📂 Included Applications
+### 📂 Project Structure (v1.4)
 | File | Description | 
 |----------|----------|
-| launcher.py | Centralised launcher GUI  | 
-| TextASG.py  | Handles server-side encrypted text-based communication  | 
-| VoiceAC.py | Manages encrypted voice and text communication  | 
-| GenGUI.py  | Generates new One-Time Pads (OTPs)  | 
-
+| Launcher1.4.py  | main menu  | 
+| TextASG1.4.py  | server GUI  | 
+| VoiceAC1.4.py | client GUI (text + voice)  | 
+| GenGUI1.4.py   | OTP generator GUI  | 
+| otp_cipher.txt | generated OTP pages (not version‑controlled)  | 
+| used_pages.txt  | consumed OTP identifiers (auto‑created)  | 
+| chat_history_<userID>.txt  | per‑user logs (auto‑created) | 
 ---
 
 ### 🔒 Security and Ethical Notice
-This system is intended solely for ethical and legal purposes. Users must adhere to applicable laws and ethical standards concerning data privacy and encryption.
-
+This software is provided solely for lawful and educational purposes.  Users are responsible for complying with all applicable laws and regulations.  Misuse of strong encryption to facilitate illegal activity is strictly discouraged.
 ---
 Open source and free for anyone to use 
