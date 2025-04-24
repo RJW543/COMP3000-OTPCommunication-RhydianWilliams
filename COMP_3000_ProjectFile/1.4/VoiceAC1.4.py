@@ -66,7 +66,7 @@ def decrypt_message(encrypted_message, otp_content):
         decrypted_message.append(decrypted_char)
     return ''.join(decrypted_message)
 
-
+#OTPClient class
 class OTPClient:
     def __init__(self, master):
         self.master = master
@@ -282,15 +282,18 @@ class OTPClient:
     def receive_messages(self):
         while True:
             try:
+                 #Check if the client socket is active and receive data
                 if self.client_socket:
                     data = self.client_socket.recv(4096)
-                    if not data:
+                    if not data: #If no data is received, exit the loop
                         break
-                    message = data.decode("utf-8")
+                    message = data.decode("utf-8") #Decode the received message
                     try:
+                        #Parse the received message into sender ID and payload
                         sender_id, payload = message.split("|", 1)
                         otp_identifier, actual_encrypted_message = payload.split(":", 1)
 
+                        #Search for the OTP content corresponding to the identifier
                         otp_content = None
                         for identifier, content in self.otp_pages:
                             if identifier == otp_identifier:
@@ -298,23 +301,31 @@ class OTPClient:
                                 break
 
                         if otp_content:
+                            #Decrypt the message using the OTP content
                             decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
                             display_line = f"Received from {sender_id} (Decrypted): {decrypted_message}"
                             self.update_chat_area(display_line)
+                            #Use a separate thread to speak the decrypted message
                             threading.Thread(target=self.speak_text, args=(decrypted_message,), daemon=True).start()
+                            #Mark the OTP page as used and save it
                             save_used_page(otp_identifier)
                             self.used_identifiers.add(otp_identifier)
                         else:
+                            #Handle case where OTP identifier is unknown
                             display_line = f"Received from {sender_id} (Unknown OTP): {actual_encrypted_message}"
                             self.update_chat_area(display_line)
                     except ValueError:
+                        #Handle improperly formatted messages
                         self.update_chat_area("Received an improperly formatted message.")
             except Exception as e:
+                #Log any errors that occur during message reception
                 print(f"Error receiving message: {e}")
                 break
-
+                
+        #Close the client socket if it is still open
         if self.client_socket:
             self.client_socket.close()
+        #Notify the user that the connection has been disconnected
         messagebox.showwarning("Warning", "Disconnected from the server.")
         self.master.quit()
 

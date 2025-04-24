@@ -7,7 +7,7 @@ import fcntl
 import speech_recognition as sr
 import pyttsx3
 
-# OTP Functions 
+#OTP Functions 
 
 def load_otp_pages(file_name="otp_cipher.txt"):
     otp_pages = []
@@ -66,18 +66,18 @@ def decrypt_message(encrypted_message, otp_content):
     return ''.join(decrypted_message)
 
 
-# Client Class
+#Client Class
 
 class OTPClient:
     def __init__(self, master):
         self.master = master
         self.master.title("OTP Messaging Client")
 
-        # Initialise OTP
+        #Initialise OTP
         self.otp_pages = load_otp_pages()
         self.used_identifiers = load_used_pages()
 
-        # Frame for Ngrok address input
+        #Frame for Ngrok address input
         self.ngrok_frame = tk.Frame(master)
         self.ngrok_frame.pack(padx=10, pady=5)
 
@@ -98,7 +98,7 @@ class OTPClient:
         self.set_server_button = tk.Button(self.ngrok_frame, text="Set Server Address", command=self.set_server_address)
         self.set_server_button.pack(side=tk.LEFT)
 
-        # Frame for user ID
+        #Frame for user ID
         self.user_id_frame = tk.Frame(master)
         self.user_id_label = tk.Label(self.user_id_frame, text="Enter your userID:")
         self.user_id_label.pack(side=tk.LEFT)
@@ -107,7 +107,7 @@ class OTPClient:
         self.connect_button = tk.Button(self.user_id_frame, text="Connect", command=self.connect_to_server)
         self.connect_button.pack(side=tk.LEFT)
 
-        # Message frame setup (hidden initially)
+        #Message frame setup (hidden initially)
         self.message_frame = tk.Frame(master)
         self.user_id_display = tk.Label(self.message_frame, text="")
         self.user_id_display.pack(pady=5)
@@ -121,17 +121,17 @@ class OTPClient:
         self.recipient_input = tk.Entry(self.message_frame, width=50)
         self.recipient_input.pack(pady=5)
 
-        # Label + Entry for the message text
+        #Label + Entry for the message text
         self.message_label = tk.Label(self.message_frame, text="Message to send:")
         self.message_label.pack()
         self.text_input = tk.Entry(self.message_frame, width=50)
         self.text_input.pack(pady=5)
 
-        # Send button for text messages
+        #Send button for text messages
         self.send_button = tk.Button(self.message_frame, text="Send Text Message", command=self.send_message)
         self.send_button.pack(pady=(5, 2))
 
-        # New button for recording and sending a voice message
+        #Button for recording and sending a voice message
         self.record_button = tk.Button(self.message_frame, text="Record Voice Message", command=self.send_voice_message)
         self.record_button.pack(pady=(2, 5))
 
@@ -226,7 +226,7 @@ class OTPClient:
                 if self.client_socket:
                     data = self.client_socket.recv(4096)
                     if not data:
-                        break  # Server disconnected
+                        break  #Server disconnected
                     message = data.decode("utf-8")
                     try:
                         sender_id, payload = message.split("|", 1)
@@ -241,7 +241,7 @@ class OTPClient:
                         if otp_content:
                             decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
                             self.update_chat_area(f"Received from {sender_id} (Decrypted): {decrypted_message}")
-                            # Speak the decrypted message in a separate thread
+                            #Speak the decrypted message in a separate thread
                             threading.Thread(target=self.speak_text, args=(decrypted_message,), daemon=True).start()
                             save_used_page(otp_identifier)
                             self.used_identifiers.add(otp_identifier)

@@ -8,10 +8,10 @@ class MainMenuApp:
         self.master = master
         self.master.title("OTP Main Menu")
 
-        # Label / Title
+        #Label / Title
         tk.Label(master, text="Please choose an action:", font=("Arial", 14)).pack(pady=10)
 
-        # Buttons
+        #Buttons
         btn_host_server = tk.Button(master, text="Host Server", width=20, command=self.launch_server_gui)
         btn_host_server.pack(pady=5)
 

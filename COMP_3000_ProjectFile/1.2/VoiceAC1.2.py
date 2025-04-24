@@ -76,11 +76,11 @@ class OTPClient:
         self.user_id_file = Path("user_id.txt")
         self.user_id = self.load_or_prompt_user_id()
 
-        # Initialise OTP
+        #Initialise OTP
         self.otp_pages = load_otp_pages()
         self.used_identifiers = load_used_pages()
 
-        # Frame for Ngrok address input
+        #Frame for Ngrok address input
         self.ngrok_frame = tk.Frame(master)
         self.ngrok_frame.pack(padx=10, pady=5)
 
@@ -118,7 +118,7 @@ class OTPClient:
 
         self.user_id_frame.pack(padx=10, pady=10)
 
-        # Message frame setup (hidden until connected)
+        #Message frame setup (hidden until connected)
         self.message_frame = tk.Frame(master)
         self.user_id_display = tk.Label(self.message_frame, text="")
         self.user_id_display.pack(pady=5)
@@ -132,17 +132,17 @@ class OTPClient:
         self.recipient_input = tk.Entry(self.message_frame, width=50)
         self.recipient_input.pack(pady=5)
 
-        # Label + Entry for the message text
+        #Label + Entry for the message text
         self.message_label = tk.Label(self.message_frame, text="Message to send:")
         self.message_label.pack()
         self.text_input = tk.Entry(self.message_frame, width=50)
         self.text_input.pack(pady=5)
 
-        # Send button for text messages
+        #Send button for text messages
         self.send_button = tk.Button(self.message_frame, text="Send Text Message", command=self.send_message)
         self.send_button.pack(pady=(5, 2))
 
-        # New button for recording and sending a voice message
+        #New button for recording and sending a voice message
         self.record_button = tk.Button(self.message_frame, text="Record Voice Message", command=self.send_voice_message)
         self.record_button.pack(pady=(2, 5))
 
@@ -187,7 +187,7 @@ class OTPClient:
         self.SERVER_PORT = int(port)
         messagebox.showinfo("Info", f"Server address set to {self.SERVER_HOST}:{self.SERVER_PORT}")
 
-        # Disable further edits
+        #Disable further edits
         self.ngrok_host_entry.config(state=tk.DISABLED)
         self.ngrok_port_entry.config(state=tk.DISABLED)
         self.set_server_button.config(state=tk.DISABLED)
@@ -197,7 +197,7 @@ class OTPClient:
             messagebox.showwarning("Warning", "Please set the server address first.")
             return
 
-        # Finalize user ID from Entry
+        #Finalise user ID from Entry
         self.user_id = self.user_id_entry.get().strip()
         if not self.user_id:
             messagebox.showwarning("Warning", "Please enter a userID.")
@@ -205,7 +205,7 @@ class OTPClient:
 
         self.save_user_id_to_file(self.user_id)
 
-        # Update chat history file for this user
+        #Update chat history file for this user
         self.chat_history_file = Path(f"chat_history_{self.user_id}.txt")
 
         try:
@@ -219,7 +219,7 @@ class OTPClient:
                 self.client_socket.close()
                 return
 
-            # Connected successfully
+            #Connected successfully
             messagebox.showinfo("Info", "Connected to the server.")
             self.user_id_frame.pack_forget()
             self.message_frame.pack(padx=10, pady=10)
@@ -227,7 +227,7 @@ class OTPClient:
 
             self.load_chat_history()
 
-            # Start a thread to handle incoming messages
+            #Start a thread to handle incoming messages
             receive_thread = threading.Thread(target=self.receive_messages, daemon=True)
             receive_thread.start()
 
@@ -273,7 +273,7 @@ class OTPClient:
                 try:
                     self.client_socket.sendall(full_message.encode("utf-8"))
                     self.text_input.delete(0, tk.END)
-                    # Show in local chat area
+                    #Show in local chat area
                     display_line = f"Me to {recipient_id}: {message}"
                     self.update_chat_area(display_line)
                 except Exception as e:
@@ -287,7 +287,7 @@ class OTPClient:
                 if self.client_socket:
                     data = self.client_socket.recv(4096)
                     if not data:
-                        break  # Server disconnected
+                        break  #Server disconnected
                     message = data.decode("utf-8")
                     try:
                         sender_id, payload = message.split("|", 1)
@@ -303,9 +303,9 @@ class OTPClient:
                             decrypted_message = decrypt_message(actual_encrypted_message, otp_content)
                             display_line = f"Received from {sender_id} (Decrypted): {decrypted_message}"
                             self.update_chat_area(display_line)
-                            # Speak the decrypted message in a separate thread
+                            # peak the decrypted message in a separate thread
                             threading.Thread(target=self.speak_text, args=(decrypted_message,), daemon=True).start()
-                            # Mark the page as used
+                            #Mark the page as used
                             save_used_page(otp_identifier)
                             self.used_identifiers.add(otp_identifier)
                         else:

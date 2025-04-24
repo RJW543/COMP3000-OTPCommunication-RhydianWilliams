@@ -27,7 +27,7 @@ def fetch_random_seed():
     response = requests.post(url, json=data, headers=headers)
     response_data = response.json()
 
-    # If there's an error from Random.org
+    #If there's an error from Random.org
     if "error" in response_data:
         raise ValueError(f"Random.org API error: {response_data['error']['message']}")
     return response_data['result']['random']['data'][0]
@@ -40,7 +40,6 @@ def generate_random_string(length):
 def generate_otp_page(identifier_length=8, page_length=3500):
     """
     Generate a single OTP page with a random identifier and OTP content.
-    Note: The random module should already be seeded before calling.
     """
     identifier = generate_random_string(identifier_length)
     otp_content = generate_random_string(page_length - identifier_length)
@@ -55,11 +54,11 @@ def generate_otp_file(file_name="otp_cipher.txt", num_pages=10000, mode="standar
     page_length = 3500  
 
     if mode == "standard":
-        # Fetch a true random seed from Random.org
+        #Fetch a true random seed from Random.org
         random_seed = fetch_random_seed()
         random.seed(random_seed)
     elif mode == "fast":
-        # Just use Python's built-in seeding (system time)
+        #Just use Python's built-in seeding (system time)
         random.seed()
 
 
@@ -77,17 +76,17 @@ class OTPGeneratorApp:
         self.master = master
         master.title("OTP File Generator")
 
-        # Output file name is locked to "otp_cipher.txt"
+        #Output file name is locked to "otp_cipher.txt"
         tk.Label(master, text="Output File Name (fixed): otp_cipher.txt").grid(
             row=0, column=0, columnspan=2, padx=5, pady=5
         )
 
-        # Number of Pages
+        #Number of Pages
         tk.Label(master, text="Number of OTP Pages:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
         self.num_pages_var = tk.StringVar(value="10000")
         tk.Entry(master, textvariable=self.num_pages_var, width=10).grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
-        # Mode Selection
+        #Mode Selection
         self.mode_var = tk.StringVar(value="standard")  
         modes_frame = tk.LabelFrame(master, text="Mode")
         modes_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
@@ -96,32 +95,32 @@ class OTPGeneratorApp:
         tk.Radiobutton(modes_frame, text="Fast", variable=self.mode_var, value="fast").pack(anchor="w")
         tk.Radiobutton(modes_frame, text="Advanced", variable=self.mode_var, value="advanced").pack(anchor="w")
 
-        # Generate Button
+        #Generate Button
         generate_button = tk.Button(master, text="Generate OTP File", command=self.generate_otp_action)
         generate_button.grid(row=3, column=0, columnspan=2, padx=5, pady=10)
 
-        # Status Label
+        #Status Label
         self.status_label = tk.Label(master, text="", fg="blue")
         self.status_label.grid(row=4, column=0, columnspan=2, padx=5, pady=5)
 
     def generate_otp_action(self):
         file_name = "otp_cipher.txt"
 
-        # Validate num_pages
+        #Validate num_pages
         try:
             num_pages = int(self.num_pages_var.get().strip())
         except ValueError:
             messagebox.showerror("Error", "Number of OTP pages must be an integer.")
             return
 
-        selected_mode = self.mode_var.get()  # "standard", "fast", or "advanced"
+        selected_mode = self.mode_var.get()  #"standard", "fast", or "advanced"
 
-        # If advanced mode is chosen, do nothing but show a message
+        #If advanced mode is chosen, do nothing but show a message
         if selected_mode == "advanced":
             messagebox.showinfo("Not yet implemented", "Advanced mode is not yet implemented.")
             return  
 
-        # Otherwise, generate the file
+        #Otherwise, generate the file
         try:
             output_path = generate_otp_file(
                 file_name=file_name,

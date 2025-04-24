@@ -12,7 +12,7 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
         client_socket = self.request
         user_id = None
         try:
-            # Receive the userID upon connect
+            #Receive the userID upon connect
             user_id = client_socket.recv(1024).decode("utf-8").strip()
             if not user_id:
                 client_socket.sendall("Invalid userID. Connection closed.".encode("utf-8"))
@@ -25,12 +25,12 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
                 print(f"Rejected connection from {self.client_address}: UserID '{user_id}' already taken.")
                 return
 
-            # Register the client
+            #Register the client
             clients[user_id] = client_socket
             client_socket.sendall("Connected successfully.".encode("utf-8"))
             print(f"User '{user_id}' connected from {self.client_address}")
 
-            # Handle incoming messages from this client
+            #Handle incoming messages from this client
             while True:
                 data = client_socket.recv(4096)
                 if not data:
@@ -64,7 +64,7 @@ def send_message_to_recipient(recipient_id, message, sender_id):
             del clients[recipient_id]
             recipient_socket.close()
     else:
-        # Notify the sender that the recipient doesn't exist
+        #Notify the sender that the recipient doesn't exist
         sender_socket = clients.get(sender_id)
         if sender_socket:
             msg = f"Recipient '{recipient_id}' not found."
@@ -87,40 +87,40 @@ class ServerGUI:
         self.server_thread = None
         self.ngrok_tunnel = None
 
-        # Status label
+        #Status label
         self.status_label = tk.Label(master, text="Server is NOT running.", fg="red", font=("Arial", 12))
         self.status_label.pack(pady=5)
 
-        # Start Button
+        #Start Button
         self.start_button = tk.Button(master, text="Start Server", command=self.start_server, width=15)
         self.start_button.pack(pady=5)
 
-        # Label to display the public NGROK info
+        #Label to display the public NGROK info
         self.ngrok_info_label = tk.Label(master, text="", fg="blue", font=("Arial", 10))
         self.ngrok_info_label.pack(pady=5)
 
-        # Stop Button
+        #Stop Button
         self.stop_button = tk.Button(master, text="Stop Server", command=self.stop_server, width=15, state=tk.DISABLED)
         self.stop_button.pack(pady=5)
 
     def start_server(self):
         """Starts the Ngrok tunnel and the ThreadedTCPServer in a background thread."""
         try:
-            # 1) Open the pyngrok tunnel
+            #Open the pyngrok tunnel
             self.ngrok_tunnel = ngrok.connect(self.PORT, "tcp")
             public_url = self.ngrok_tunnel.public_url  
 
-            # Parse host and port from the public URL
+            #Parse host and port from the public URL
             parsed_url = public_url.replace("tcp://", "").split(":")
             ngrok_host = parsed_url[0]
             ngrok_port = parsed_url[1]
 
-            # 2) Update the label to show the ngrok info
+            #Update the label to show the ngrok info
             self.ngrok_info_label.config(
                 text=f"Public URL: {public_url}\nNgrok Host: {ngrok_host}\nNgrok Port: {ngrok_port}"
             )
 
-            # 3) Define the server thread
+            #Define the server thread
             def run_server():
                 self.server = ThreadedTCPServer((self.HOST, self.PORT), ThreadedTCPRequestHandler)
                 with self.server:
@@ -131,7 +131,7 @@ class ServerGUI:
             self.server_thread = threading.Thread(target=run_server, daemon=True)
             self.server_thread.start()
 
-            # Update status
+            #Update status
             self.status_label.config(text="Server is RUNNING.", fg="green")
             self.start_button.config(state=tk.DISABLED)
             self.stop_button.config(state=tk.NORMAL)
@@ -142,14 +142,14 @@ class ServerGUI:
         """Stops the server and closes the ngrok tunnel."""
         if self.server:
             try:
-                # Shut down the server
+                #Shut down the server
                 self.server.shutdown()
                 self.server.server_close()
                 print("Server has been stopped.")
             except Exception as e:
                 print(f"Error stopping server: {e}")
 
-        # Disconnect the ngrok tunnel if it is open
+        #Disconnect the ngrok tunnel if it is open
         if self.ngrok_tunnel:
             try:
                 ngrok.disconnect(self.ngrok_tunnel.public_url)
@@ -157,12 +157,12 @@ class ServerGUI:
             except Exception as e:
                 print(f"Error disconnecting ngrok tunnel: {e}")
 
-        # Reset references
+        #Reset references
         self.server = None
         self.server_thread = None
         self.ngrok_tunnel = None
 
-        # Update status
+        #Update status
         self.status_label.config(text="Server is NOT running.", fg="red")
         self.start_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
