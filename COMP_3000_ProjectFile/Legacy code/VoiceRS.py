@@ -1,3 +1,4 @@
+@ -1,50 +0,0 @@
 import speech_recognition as sr
 
 recognized_text = ""
