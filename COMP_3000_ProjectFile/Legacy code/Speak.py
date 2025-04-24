@@ -1,7 +1,7 @@
 import pyttsx3
 
 def speak_transcription(file_path="transcription.txt"):
-    # This bit initialises the text-to-speech engine.
+    #This bit initialises the text-to-speech engine.
     engine = pyttsx3.init()
     
     try:
